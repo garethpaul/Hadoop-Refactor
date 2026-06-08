@@ -42,7 +42,7 @@ memory behavior and keep malformed input handling explicit.
 Native binaries and generated artifacts need provenance and should not be
 silently replaced.
 
-## What We Will Not Merge For Now
+## What We Will Not Merge (For Now)
 
 - Native artifact replacements without build provenance
 - Hadoop major-version migrations without compatibility notes
