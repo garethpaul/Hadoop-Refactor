@@ -73,4 +73,4 @@ Keep changes small and tied to the project that is already present in this repos
 
 Prior README summary:
 
-> Hadoop-Refactor <!-- README-OVERVIEW-IMAGE --> Hadoop-LZO ========== Hadoop-LZO is a project to bring splittable LZO compression to Hadoop.  LZO is an ideal compression format for Hadoop due to its combination of speed and compression size.  However, LZO files are not natively splittable, meaning the parallelism that is the core of Hadoop is gone.  This project re-enables that parallelism with LZO compressed files, and also comes with standard utilities (input/output streams,
+> Hadoop-Refactor Hadoop-LZO ========== Hadoop-LZO is a project to bring splittable LZO compression to Hadoop.  LZO is an ideal compression format for Hadoop due to its combination of speed and compression size.  However, LZO files are not natively splittable, meaning the parallelism that is the core of Hadoop is gone.  This project re-enables that parallelism with LZO compressed files, and also comes with standard utilities (input/output streams,
