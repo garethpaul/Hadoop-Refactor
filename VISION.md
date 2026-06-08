@@ -36,6 +36,11 @@ Contribution rules:
 
 ## Security And Integrity
 
+Canonical security policy and reporting:
+
+- [`SECURITY.md`](SECURITY.md)
+
+
 Compression libraries process untrusted data. Changes should avoid unsafe native
 memory behavior and keep malformed input handling explicit.
 
