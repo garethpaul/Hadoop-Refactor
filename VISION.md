@@ -1,5 +1,8 @@
 ## Hadoop Refactor Vision
 
+This document explains the current state and direction of the project.
+Project overview and developer docs: [`README.md`](README.md)
+
 Hadoop Refactor is a Hadoop-LZO compression codebase focused on splittable LZO
 support for Hadoop.
 
