@@ -1,126 +1,74 @@
 # Hadoop-Refactor
 
-<!-- README-OVERVIEW-IMAGE -->
-![Project overview](docs/readme-overview.svg)
+## Overview
 
-Hadoop-LZO
-==========
+`garethpaul/Hadoop-Refactor` is a public sample, documentation, or utility project. Refactor of Hadoop with compression
 
-Hadoop-LZO is a project to bring splittable LZO compression to Hadoop.  LZO is an ideal compression format for Hadoop due to its combination of speed and compression size.  However, LZO files are not natively splittable, meaning the parallelism that is the core of Hadoop is gone.  This project re-enables that parallelism with LZO compressed files, and also comes with standard utilities (input/output streams, etc) for working with LZO files.
+This README is based on the checked-in source, manifests, scripts, and repository metadata on the `master` branch. The project language mix found during review was: Java (29), shell (4), C (2), C/C++ headers (2).
 
-### Origins
+## Repository Contents
 
-This project builds off the great work done at [http://code.google.com/p/hadoop-gpl-compression](http://code.google.com/p/hadoop-gpl-compression).  As of issue 41, the differences in this codebase are the following.
+- `README.md` - project overview and local usage notes
+- `ivy` - source or example code
+- `SECURITY.md` - security reporting and disclosure guidance
+- `src` - source or example code
+- `VISION.md` - project direction and maintenance guardrails
 
-- it fixes a few bugs in hadoop-gpl-compression -- notably, it allows the decompressor to read small or uncompressable lzo files, and also fixes the compressor to follow the lzo standard when compressing small or uncompressible chunks.  it also fixes a number of inconsistenly caught and thrown exception cases that can occur when the lzo writer gets killed mid-stream, plus some other smaller issues (see commit log).
-- it adds the ability to work with Hadoop streaming via the com.apache.hadoop.mapred.DeprecatedLzoTextInputFormat class
-- it adds an easier way to index lzo files (com.hadoop.compression.lzo.LzoIndexer)
-- it adds an even easier way to index lzo files, in a distributed manner (com.hadoop.compression.lzo.DistributedLzoIndexer)
+Additional scan context:
 
-### Hadoop and LZO, Together at Last
+- Source directories: ivy, src
+- Dependency and build manifests: none detected
+- Entry points or build surfaces: none detected
+- Test-looking files: src/test/com/hadoop/compression/lzo/TestLzoCodec.java, src/test/com/hadoop/compression/lzo/TestLzoRandData.java, src/test/com/hadoop/compression/lzo/TestLzopInputStream.java, src/test/com/hadoop/compression/lzo/TestLzopOutputStream.java, src/test/com/hadoop/mapreduce/TestLzoTextInputFormat.java, src/test/data/0.txt, src/test/data/100.txt, src/test/data/1000.txt, and 2 more
 
-LZO is a wonderful compression scheme to use with Hadoop because it's incredibly fast, and (with a bit of work) it's splittable.  Gzip is decently fast, but cannot take advantage of Hadoop's natural map splits because it's impossible to start decompressing a gzip stream starting at a random offset in the file.  LZO's block format makes it possible to start decompressing at certain specific offsets of the file -- those that start new LZO block boundaries.  In addition to providing LZO decompression support, these classes provide an in-process indexer (com.hadoop.compression.lzo.LzoIndexer) and a map-reduce style indexer which will read a set of LZO files and output the offsets of LZO block boundaries that occur near the natural Hadoop block boundaries.  This enables a large LZO file to be split into multiple mappers and processed in parallel.  Because it is compressed, less data is read off disk, minimizing the number of IOPS required.  And LZO decompression is so fast that the CPU stays ahead of the disk read, so there is no performance impact from having to decompress data as it's read off disk.
+## Getting Started
 
-You can read more about Hadoop, LZO, and how we're using it at Twitter at [http://www.cloudera.com/blog/2009/11/17/hadoop-at-twitter-part-1-splittable-lzo-compression/](http://www.cloudera.com/blog/2009/11/17/hadoop-at-twitter-part-1-splittable-lzo-compression/).
+### Prerequisites
 
-### Building and Configuring
+- Git
 
-To get started, see [http://code.google.com/p/hadoop-gpl-compression/wiki/FAQ](http://code.google.com/p/hadoop-gpl-compression/wiki/FAQ).  This project is built exactly the same way; please follow the answer to "How do I configure Hadoop to use these classes?" on that page, or follow the summarized version here.
+### Setup
 
-LZO 2.x is required, and most easily installed via the package manager on your system. If you choose to install manually for whatever reason (developer OSX machines is a common use-case) this is accomplished as follows:
-
-1. Download the latest LZO release from http://www.oberhumer.com/opensource/lzo/
-1. Configure LZO to build a shared library (required) and use a package-specific prefix (optional but recommended): `./configure --enable-shared --prefix /usr/local/lzo-2.06`
-1. Build and install LZO: `make && sudo make install`
-
-Now let's build hadoop-lzo.
-
-    JAVA_HOME=/Library/Java/JavaVirtualMachines/1.6.0_29-b11-402.jdk/Contents/Home \
-    C_INCLUDE_PATH=/usr/local/lzo-2.06/include \
-    LIBRARY_PATH=/usr/local/lzo-2.06/lib \
-      ant clean test
-
-Once the libs are built and installed, you may want to add them to the class paths and library paths.  That is, in hadoop-env.sh, set
-
-        export HADOOP_CLASSPATH=/path/to/your/hadoop-lzo-lib.jar
-        export JAVA_LIBRARY_PATH=/path/to/hadoop-lzo-native-libs:/path/to/standard-hadoop-native-libs
-
-Note that there seems to be a bug in /path/to/hadoop/bin/hadoop; comment out the line
-
-        JAVA_LIBRARY_PATH=''
-
-because it keeps Hadoop from keeping the alteration you made to JAVA_LIBRARY_PATH above.  (Update: see [https://issues.apache.org/jira/browse/HADOOP-6453](https://issues.apache.org/jira/browse/HADOOP-6453)).  Make sure you restart your jobtrackers and tasktrackers after uploading and changing configs so that they take effect.
-
-### Build Troubleshooting
-
-The following missing LZO header error suggests LZO was installed in non-standard location and
-cannot be found at build time. Double-check the environment variable C_INCLUDE_PATH is set to the
-LZO include directory. For example: `C_INCLUDE_PATH=/usr/local/lzo-2.06/include`
-
-    [exec] checking lzo/lzo2a.h presence... no
-    [exec] checking for lzo/lzo2a.h... no
-    [exec] configure: error: lzo headers were not found...
-    [exec]                gpl-compression library needs lzo to build.
-    [exec]                Please install the requisite lzo development package.
-
-The following `Can't find library for '-llzo2'` error suggests LZO was installed to a non-standard location and cannot be located at build time. This could be one of two issues:
-
-1. LZO was not built as a shared library. Double-check the location you installed LZO contains shared libraries (probably something like `/usr/lib64/liblzo2.so.2` on Linux, or `/usr/local/lzo-2.06/lib/liblzo2.dylib` on OSX).
-1. LZO was not added to the library path. Double-check the environment varialbe LIBRARY_PATH points as the LZO lib directory (for example `LIBRARY_PATH=/usr/local/lzo-2.06/lib`).
-
-    [exec] checking lzo/lzo2a.h usability... yes
-    [exec] checking lzo/lzo2a.h presence... yes
-    [exec] checking for lzo/lzo2a.h... yes
-    [exec] checking Checking for the 'actual' dynamic-library for '-llzo2'... configure: error: Can't find library for '-llzo2'
-
-The following "Native java headers not found" error indicates the Java header files are not available.
-
-    [exec] checking jni.h presence... no
-    [exec] checking for jni.h... no
-    [exec] configure: error: Native java headers not found. Is $JAVA_HOME set correctly?
-
-Header files are not available in all Java installs. Double-check you are using a JAVA_HOME that has an `include` directory. On OSX you may need to install a developer Java package.
-
-    $ ls -d /Library/Java/JavaVirtualMachines/1.6.0_29-b11-402.jdk/Contents/Home/include
-    /Library/Java/JavaVirtualMachines/1.6.0_29-b11-402.jdk/Contents/Home/include
-    $ ls -d /System/Library/Java/JavaVirtualMachines/1.6.0.jdk/Contents/Home/include
-    ls: /System/Library/Java/JavaVirtualMachines/1.6.0.jdk/Contents/Home/include: No such file or directory
-
-### Maven repository
-
-The hadoop-lzo package is available at `http://maven.twttr.com/`.
-
-For example, if you are using `ivy`, add the repository in `ivysettings.xml`:
-```xml
-  <ibiblio name="twttr.com" m2compatible="true" root="http://maven.twttr.com/"/>
+```bash
+git clone https://github.com/garethpaul/Hadoop-Refactor.git
+cd Hadoop-Refactor
 ```
 
-And include hadoop-lzo as a dependency:
-```xml
-  <dependency org="com.hadoop.gplcompression" name="hadoop-lzo" rev="0.4.15"/>
-```
+The setup commands above are derived from repository files. Legacy mobile, Python, or JavaScript samples may require older SDKs or package versions than a modern workstation uses by default.
 
-### Using Hadoop and LZO
+## Running or Using the Project
 
-#### Reading and Writing LZO Data
-The project provides LzoInputStream and LzoOutputStream wrapping regular streams, to allow you to easily read and write compressed LZO data.  
+- No single runtime entry point was identified. Start by reading the source files and manifests listed above.
 
-#### Indexing LZO Files
+## Testing and Verification
 
-At this point, you should also be able to use the indexer to index lzo files in Hadoop (recall: this makes them splittable, so that they can be analyzed in parallel in a mapreduce job).  Imagine that big_file.lzo is a 1 GB LZO file. You have two options:
+- No dedicated automated test command was identified from the checked-in files. Verify changes by running the relevant build or manually exercising the sample.
 
-- index it in-process via:
+When the required SDK or runtime is unavailable, use static checks and source review first, then verify on a machine that has the matching platform toolchain.
 
-        hadoop jar /path/to/your/hadoop-lzo.jar com.hadoop.compression.lzo.LzoIndexer big_file.lzo
+## Configuration and Secrets
 
-- index it in a map-reduce job via:
+- No required secret or credential file was identified in the repository scan. If you add integrations later, keep secrets out of git.
 
-        hadoop jar /path/to/your/hadoop-lzo.jar com.hadoop.compression.lzo.DistributedLzoIndexer big_file.lzo
+## Security and Privacy Notes
 
-Either way, after 10-20 seconds there will be a file named big_file.lzo.index.  The newly-created index file tells the LzoTextInputFormat's getSplits function how to break the LZO file into splits that can be decompressed and processed in parallel.  Alternatively, if you specify a directory instead of a filename, both indexers will recursively walk the directory structure looking for .lzo files, indexing any that do not already have corresponding .lzo.index files.
+- Review changes touching network requests, sockets, or service endpoints; examples from the scan include build.xml, ivy/ivysettings.xml, ivy.xml, src/java/com/hadoop/compression/lzo/CChecksum.java, and 6 more.
+- Review changes touching file, media, JSON, XML, CSV, OCR, or data parsing; examples from the scan include build.xml, ivy/ivysettings.xml, ivy.xml, src/get_build_revision.sh, and 4 more.
+- Review changes touching shell execution, subprocess, or dynamic evaluation; examples from the scan include src/native/config/ltmain.sh.
+- Review changes touching database, model, or persistence code; examples from the scan include build.xml.
 
-#### Running MR Jobs over Indexed Files
+## Maintenance Notes
 
-Now run any job, say wordcount, over the new file.  In Java-based M/R jobs, just replace any uses of TextInputFormat by LzoTextInputFormat.  In streaming jobs, add "-inputformat com.hadoop.mapred.DeprecatedLzoTextInputFormat" (streaming still uses the old APIs, and needs a class that inherits from org.apache.hadoop.mapred.InputFormat).  For Pig jobs, email me or check the pig list -- I have custom LZO loader classes that work but are not (yet) contributed back.
+- See `SECURITY.md` for vulnerability reporting and safe research guidance.
+- See `VISION.md` for project direction and contribution guardrails.
 
-Note that if you forget to index an .lzo file, the job will work but will process the entire file in a single split, which will be less efficient.
+## Contributing
+
+Keep changes small and tied to the project that is already present in this repository. For code changes, document the toolchain used, avoid committing generated dependency directories or local configuration, and update this README when setup or verification steps change.
+
+## Existing Project Notes
+
+Prior README summary:
+
+> Hadoop-Refactor <!-- README-OVERVIEW-IMAGE --> Hadoop-LZO ========== Hadoop-LZO is a project to bring splittable LZO compression to Hadoop.  LZO is an ideal compression format for Hadoop due to its combination of speed and compression size.  However, LZO files are not natively splittable, meaning the parallelism that is the core of Hadoop is gone.  This project re-enables that parallelism with LZO compressed files, and also comes with standard utilities (input/output streams,
+
