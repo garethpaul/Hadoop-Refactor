@@ -25,3 +25,14 @@ out/
 *.ipr
 *.iml
 *.iws
+*.class
+target/
+*.o
+*.lo
+*.la
+*.so
+*.dylib
+*.dll
+*.log
+*.tmp
+.DS_Store

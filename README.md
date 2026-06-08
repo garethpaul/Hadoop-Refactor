@@ -11,8 +11,13 @@ This README is based on the checked-in source, manifests, scripts, and repositor
 
 ## Repository Contents
 
+- `CHANGES.md` - concise history of maintenance changes
+- `Makefile` - local verification entry point
 - `README.md` - project overview and local usage notes
+- `build.xml` and `ivy.xml` - legacy Ant/Ivy build metadata
 - `ivy` - source or example code
+- `lib/hadoop-core-0.20.2-cdh3u1.jar` - checked-in legacy Hadoop dependency
+- `scripts/check-baseline.py` - static legacy build verifier
 - `SECURITY.md` - security reporting and disclosure guidance
 - `src` - source or example code
 - `VISION.md` - project direction and maintenance guardrails
@@ -20,8 +25,8 @@ This README is based on the checked-in source, manifests, scripts, and repositor
 Additional scan context:
 
 - Source directories: ivy, src
-- Dependency and build manifests: none detected
-- Entry points or build surfaces: none detected
+- Dependency and build manifests: build.xml, ivy.xml, ivy/libraries.properties
+- Entry points or build surfaces: `make check`, `ant test` in a matching legacy environment
 - Test-looking files: src/test/com/hadoop/compression/lzo/TestLzoCodec.java, src/test/com/hadoop/compression/lzo/TestLzoRandData.java, src/test/com/hadoop/compression/lzo/TestLzopInputStream.java, src/test/com/hadoop/compression/lzo/TestLzopOutputStream.java, src/test/com/hadoop/mapreduce/TestLzoTextInputFormat.java, src/test/data/0.txt, src/test/data/100.txt, src/test/data/1000.txt, and 2 more
 
 ## Getting Started
@@ -29,6 +34,9 @@ Additional scan context:
 ### Prerequisites
 
 - Git
+- Python 3 for local static verification
+- Java 8 is sufficient for the static baseline used here
+- Ant, Ivy, native LZO headers/libraries, and a Hadoop 0.20/CDH3-compatible environment for full legacy builds
 
 ### Setup
 
@@ -37,15 +45,29 @@ git clone https://github.com/garethpaul/Hadoop-Refactor.git
 cd Hadoop-Refactor
 ```
 
-The setup commands above are derived from repository files. Legacy mobile, Python, or JavaScript samples may require older SDKs or package versions than a modern workstation uses by default.
+The checked-in Ant build targets Java 6 bytecode and uses legacy Hadoop 0.20/CDH3-era APIs. Use a matching Ant/Ivy/native LZO toolchain before treating full `ant test` results as authoritative.
 
 ## Running or Using the Project
 
-- No single runtime entry point was identified. Start by reading the source files and manifests listed above.
+- `build.xml` is the legacy build entry point.
+- `src/java` contains the Hadoop/LZO Java implementation.
+- `src/native` contains the native LZO build scripts and C bindings.
 
 ## Testing and Verification
 
-- No dedicated automated test command was identified from the checked-in files. Verify changes by running the relevant build or manually exercising the sample.
+Run the local static baseline:
+
+```bash
+make check
+```
+
+The baseline runs `scripts/check-baseline.py`, validates Ant/Ivy XML, checks shell syntax for native packaging scripts, verifies the Java/native/test source inventory, and confirms the checked-in Maven/Ivy download endpoints use HTTPS. It does not require Ant.
+
+For full legacy verification in a matching environment, run:
+
+```bash
+ant test
+```
 
 When the required SDK or runtime is unavailable, use static checks and source review first, then verify on a machine that has the matching platform toolchain.
 
@@ -64,6 +86,7 @@ When the required SDK or runtime is unavailable, use static checks and source re
 
 - See `SECURITY.md` for vulnerability reporting and safe research guidance.
 - See `VISION.md` for project direction and contribution guardrails.
+- Run `make check` before pushing changes to build metadata, native scripts, Java source, tests, or dependency download configuration.
 
 ## Contributing
 

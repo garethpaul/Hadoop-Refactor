@@ -31,7 +31,7 @@ Helpful reports include:
 - Review found file, document, data, or media parsing flows; changes in those areas should receive security-focused review before merge.
 - Review found shell execution, subprocess, or dynamic evaluation surfaces; changes in those areas should receive security-focused review before merge.
 - Review found database, model, query, or persistence-related code; changes in those areas should receive security-focused review before merge.
-- No primary dependency manifest was detected in the repository root. If dependencies are added later, include a manifest and prefer reproducible installation instructions.
+- Legacy Ant/Ivy dependency metadata is tracked in `build.xml`, `ivy.xml`, and `ivy/libraries.properties`. Checked-in Maven Central download endpoints should use HTTPS, and full rebuilds should document the Ant, Hadoop, Java, and native LZO toolchain used.
 
 ## Service and API Notes
 

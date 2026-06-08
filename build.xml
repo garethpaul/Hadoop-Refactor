@@ -76,7 +76,7 @@
   <property name="test.junit.maxmemory" value="512m" />
 
   <property name="javadoc.link.java"
-	    value="http://java.sun.com/javase/6/docs/api/"/>
+	    value="https://docs.oracle.com/javase/6/docs/api/"/>
   <property name="javadoc.packages" value="com.hadoop.compression.*"/>
 
   <property name="dist.dir" value="${build.dir}/${final.name}"/>
@@ -94,7 +94,7 @@
   <property name="ivy.dir" location="ivy" />
   <loadproperties srcfile="${ivy.dir}/libraries.properties"/>
   <property name="ivy.jar" location="${ivy.dir}/ivy-${ivy.version}.jar"/>
-  <property name="ivy_repo_url" value="http://repo2.maven.org/maven2/org/apache/ivy/ivy/${ivy.version}/ivy-${ivy.version}.jar"/>
+  <property name="ivy_repo_url" value="https://repo1.maven.org/maven2/org/apache/ivy/ivy/${ivy.version}/ivy-${ivy.version}.jar"/>
   <property name="ivysettings.xml" location="${ivy.dir}/ivysettings.xml" />
   <property name="ivy.org" value="com.hadoop.compression"/>
   <property name="build.dir" location="build" />
@@ -116,7 +116,7 @@
   <property name="tsk.org" value="/org/apache/maven/maven-ant-tasks/"/>
   <property name="ant_task.jar" 
     location="${ivy.dir}/maven-ant-tasks-${ant-task.version}.jar"/>
-  <property name="mvnrepo" value="http://repo2.maven.org/maven2"/>
+  <property name="mvnrepo" value="https://repo1.maven.org/maven2"/>
   <property name="ant_task_repo_url"
     value="${mvnrepo}${tsk.org}${ant-task.version}/maven-ant-tasks-${ant-task.version}.jar"/>
 
