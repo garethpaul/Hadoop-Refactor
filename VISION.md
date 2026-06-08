@@ -48,3 +48,6 @@ silently replaced.
 - Hadoop major-version migrations without compatibility notes
 - License or attribution removals
 - Compression behavior changes without tests or reproduction steps
+
+This list is a roadmap guardrail, not a permanent rule.
+Strong user demand and strong technical rationale can change it.
