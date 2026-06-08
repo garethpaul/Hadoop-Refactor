@@ -62,6 +62,8 @@ make check
 ```
 
 The baseline runs `scripts/check-baseline.py`, validates Ant/Ivy XML, checks shell syntax for native packaging scripts, verifies the Java/native/test source inventory, and confirms the checked-in Maven/Ivy download endpoints use HTTPS. It does not require Ant.
+It also exercises `src/native/packageNativeHadoop.sh` with temporary native
+library fixtures so quoted path handling stays covered.
 
 For full legacy verification in a matching environment, run:
 
@@ -87,6 +89,7 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - See `SECURITY.md` for vulnerability reporting and safe research guidance.
 - See `VISION.md` for project direction and contribution guardrails.
 - Run `make check` before pushing changes to build metadata, native scripts, Java source, tests, or dependency download configuration.
+- See `docs/plans/2026-06-08-native-packaging-guard.md` for the current native packaging guardrail.
 
 ## Contributing
 

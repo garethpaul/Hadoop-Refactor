@@ -22,7 +22,7 @@ Priority:
 - Keep native LZO, Java, Hadoop, Ant, and Ivy build requirements documented
 - Maintain troubleshooting notes for headers, shared libraries, and `JAVA_HOME`
 - Keep `scripts/check-baseline.py` passing for XML, shell, source inventory,
-  and HTTPS build-download guardrails
+  native packaging, and HTTPS build-download guardrails
 - Avoid broad Hadoop upgrades without compatibility planning
 
 Next priorities:

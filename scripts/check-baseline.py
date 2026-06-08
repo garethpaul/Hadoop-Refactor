@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import os
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 
@@ -20,6 +22,59 @@ def read(relative_path):
 
 def run(command):
     return subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, check=False)
+
+
+def verify_native_packaging_script(failures):
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor-native-") as workdir:
+        workdir = Path(workdir)
+        base_native = workdir / "base native"
+        build_native = workdir / "build native"
+        dist_native = workdir / "dist native"
+
+        prebuilt_platform = base_native / "linux x86"
+        built_platform = build_native / "mac arm" / "lib"
+        prebuilt_platform.mkdir(parents=True)
+        built_platform.mkdir(parents=True)
+        dist_native.mkdir(parents=True)
+
+        (prebuilt_platform / "libgplcompression-prebuilt.so").write_text("prebuilt", encoding="utf-8")
+        (built_platform / "libgplcompression-built.so").write_text("built", encoding="utf-8")
+
+        env = os.environ.copy()
+        env.update({
+            "BASE_NATIVE_LIB_DIR": str(base_native),
+            "BUILD_NATIVE_DIR": str(build_native),
+            "DIST_LIB_DIR": str(dist_native),
+        })
+
+        result = subprocess.run(
+            ["sh", str(ROOT / "src/native/packageNativeHadoop.sh")],
+            cwd=str(ROOT),
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            result.returncode == 0,
+            "packageNativeHadoop.sh must copy native libraries from quoted paths: "
+            + result.stderr.strip(),
+            failures,
+        )
+        prebuilt_output = dist_native / "linux x86" / "libgplcompression-prebuilt.so"
+        built_output = dist_native / "mac arm" / "libgplcompression-built.so"
+        require(
+            prebuilt_output.is_file()
+            and prebuilt_output.read_text(encoding="utf-8") == "prebuilt",
+            "packageNativeHadoop.sh must preserve prebuilt native libraries",
+            failures,
+        )
+        require(
+            built_output.is_file()
+            and built_output.read_text(encoding="utf-8") == "built",
+            "packageNativeHadoop.sh must preserve custom-built native libraries",
+            failures,
+        )
 
 
 def main():
@@ -43,6 +98,7 @@ def main():
         "src/java/com/hadoop/compression/lzo/LzoCodec.java",
         "src/test/com/hadoop/compression/lzo/TestLzoCodec.java",
         "docs/plans/2026-06-08-legacy-build-baseline.md",
+        "docs/plans/2026-06-08-native-packaging-guard.md",
     ]
 
     for relative_path in required_files:
@@ -50,12 +106,14 @@ def main():
 
     build_xml = read("build.xml")
     ivysettings = read("ivy/ivysettings.xml")
+    package_script = read("src/native/packageNativeHadoop.sh")
     readme = read("README.md")
     vision = read("VISION.md")
     security = read("SECURITY.md")
     changes = read("CHANGES.md")
     gitignore = read(".gitignore")
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
+    native_plan = read("docs/plans/2026-06-08-native-packaging-guard.md")
 
     for xml_file in ["build.xml", "ivy.xml", "ivy/ivysettings.xml"]:
         try:
@@ -108,13 +166,21 @@ def main():
                     f"{script} must pass bash syntax checks: {result.stderr.strip()}",
                     failures)
 
+    require("for platform in `ls" not in package_script and 'for platform_dir in "$source_root"/*' in package_script,
+            "packageNativeHadoop.sh must avoid parsing ls output for platform directories",
+            failures)
+    require('mkdir -p "$dist_platform_dir"' in package_script and 'cd "$source_dir"' in package_script,
+            "packageNativeHadoop.sh must quote native package paths",
+            failures)
+    verify_native_packaging_script(failures)
+
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
             ".gitignore must exclude generated build products and local machine files",
             failures)
     require("make check" in readme and "scripts/check-baseline.py" in readme and "Ant" in readme and "Java 8" in readme,
             "README must document static verification and legacy build prerequisites",
             failures)
-    require("scripts/check-baseline.py" in vision and "HTTPS" in vision,
+    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision,
             "VISION must describe the current static build baseline",
             failures)
     require("Maven Central" in security and "HTTPS" in security,
@@ -125,6 +191,9 @@ def main():
             failures)
     require("status: completed" in plan,
             "plan must be marked completed",
+            failures)
+    require("status: completed" in native_plan,
+            "native packaging plan must be marked completed",
             failures)
 
     if failures:

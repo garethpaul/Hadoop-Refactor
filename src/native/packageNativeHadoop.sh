@@ -1,4 +1,5 @@
 #!/bin/sh
+set -eu
 
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -27,39 +28,50 @@
 # All these are setup by build.xml.
 #
 
-TAR='tar cf -'
-UNTAR='tar xfBp -'
+: "${BASE_NATIVE_LIB_DIR:?BASE_NATIVE_LIB_DIR must be set}"
+: "${BUILD_NATIVE_DIR:?BUILD_NATIVE_DIR must be set}"
+: "${DIST_LIB_DIR:?DIST_LIB_DIR must be set}"
+
+copy_libraries() {
+  source_root=$1
+  source_suffix=$2
+
+  if [ ! -d "$source_root" ]; then
+    return
+  fi
+
+  for platform_dir in "$source_root"/*; do
+    [ -d "$platform_dir" ] || continue
+
+    platform=$(basename "$platform_dir")
+    source_dir="$platform_dir/$source_suffix"
+    dist_platform_dir="$DIST_LIB_DIR/$platform"
+
+    [ -d "$source_dir" ] || continue
+
+    found_library=false
+    for library in "$source_dir"/*gplcompression*; do
+      [ -e "$library" ] || continue
+      found_library=true
+      break
+    done
+    [ "$found_library" = true ] || continue
+
+    if [ ! -d "$dist_platform_dir" ]; then
+      mkdir -p "$dist_platform_dir"
+      echo "Created $dist_platform_dir"
+    fi
+
+    echo "Copying libraries in $source_dir to $dist_platform_dir/"
+    (cd "$source_dir" && tar cf - *gplcompression*) |
+      (cd "$dist_platform_dir" && tar xfBp -)
+  done
+}
 
 # Copy the pre-built libraries in $BASE_NATIVE_LIB_DIR
-if [ -d $BASE_NATIVE_LIB_DIR ]
-then
-  for platform in `ls $BASE_NATIVE_LIB_DIR`
-  do
-    if [ ! -d $DIST_LIB_DIR/$platform ]
-    then
-      mkdir -p $DIST_LIB_DIR/$platform
-      echo "Created $DIST_LIB_DIR/$platform"
-    fi
-    echo "Copying libraries in $BASE_NATIVE_LIB_DIR/$platform to $DIST_LIB_DIR/$platform/"
-    cd $BASE_NATIVE_LIB_DIR/$platform/
-    $TAR *gplcompression* | (cd $DIST_LIB_DIR/$platform/; $UNTAR)
-  done
-fi
+copy_libraries "$BASE_NATIVE_LIB_DIR" "."
 
-# Copy the custom-built libraries in $BUILD_DIR
-if [ -d $BUILD_NATIVE_DIR ]
-then 
-  for platform in `ls $BUILD_NATIVE_DIR`
-  do
-    if [ ! -d $DIST_LIB_DIR/$platform ]
-    then
-      mkdir -p $DIST_LIB_DIR/$platform
-      echo "Created $DIST_LIB_DIR/$platform"
-    fi
-    echo "Copying libraries in $BUILD_NATIVE_DIR/$platform/lib to $DIST_LIB_DIR/$platform/"
-    cd $BUILD_NATIVE_DIR/$platform/lib
-    $TAR *gplcompression* | (cd $DIST_LIB_DIR/$platform/; $UNTAR)
-  done  
-fi
+# Copy the custom-built libraries in $BUILD_NATIVE_DIR
+copy_libraries "$BUILD_NATIVE_DIR" "lib"
 
 #vim: ts=2: sw=2: et
