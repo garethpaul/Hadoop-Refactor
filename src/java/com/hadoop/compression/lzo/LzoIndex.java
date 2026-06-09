@@ -131,6 +131,18 @@ public class LzoIndex {
     return indexByteCount / 8;
   }
 
+  static void validateBlockPosition(long position, long previousPosition)
+  throws IOException {
+    if (position < 0) {
+      throw new IOException("Corrupt LZO index: negative block position " +
+        position);
+    }
+    if (previousPosition >= 0 && position <= previousPosition) {
+      throw new IOException("Corrupt LZO index: block positions must be " +
+        "strictly increasing");
+    }
+  }
+
   static void validateBlockSizes(int uncompressedBlockSize,
                                  int compressedBlockSize) throws IOException {
     if (uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE) {
@@ -219,8 +231,12 @@ public class LzoIndex {
     int blocks = getBlockCount(bytesIn.remaining());
     LzoIndex index = new LzoIndex(blocks);
 
+    long previousPosition = -1;
     for (int i = 0; i < blocks; i++) {
-      index.set(i, bytesIn.getLong());
+      long position = bytesIn.getLong();
+      validateBlockPosition(position, previousPosition);
+      index.set(i, position);
+      previousPosition = position;
     }
 
     return index;

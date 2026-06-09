@@ -8,6 +8,8 @@
   `NOT_FOUND` or file-size alignment instead of a null-pointer failure.
 - Rejected malformed index byte counts that are not aligned to 8-byte block
   offsets.
+- Rejected malformed index positions that are negative, duplicate, or
+  decreasing before split alignment relies on them.
 - Rejected oversized LZO block sizes before index generation, split readers, or
   stream decompression continue across a corrupt file.
 - Preserved missing-index fallback while surfacing non-missing `LzoIndex`

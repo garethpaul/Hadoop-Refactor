@@ -16,6 +16,7 @@ INDEX_OPEN_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-open-failure-guard.md"
 BLOCK_SIZE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-block-size-boundary.md"
 MAKE_GATES_PLAN = ROOT / "docs/plans/2026-06-09-make-gate-aliases.md"
 INDEX_RENAME_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md"
+INDEX_POSITION_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-position-order-guard.md"
 
 
 def require(condition, message, failures):
@@ -269,6 +270,7 @@ public class LzoIndexEmptyHarness {
     assertEquals(20, empty.alignSliceEndToIndex(5, 20), "alignSliceEndToIndex");
     assertEquals(2, LzoIndex.getBlockCount(16), "getBlockCount");
     assertCorruptIndexByteCountRejected();
+    assertInvalidIndexPositionsRejected();
     assertOversizedIndexBlockSizesRejected();
     assertMissingIndexReturnsEmpty();
     assertOpenFailurePropagates();
@@ -288,6 +290,27 @@ public class LzoIndexEmptyHarness {
     } catch (java.io.IOException expected) {
       if (expected.getMessage().indexOf("multiple of 8") < 0) {
         throw new AssertionError("Unexpected corrupt index message: " + expected.getMessage());
+      }
+    }
+  }
+
+  private static void assertInvalidIndexPositionsRejected() throws Exception {
+    LzoIndex.validateBlockPosition(0, -1);
+    LzoIndex.validateBlockPosition(10, 0);
+    assertIndexPositionRejected(-1, -1, "negative block position");
+    assertIndexPositionRejected(4, 4, "strictly increasing");
+    assertIndexPositionRejected(3, 4, "strictly increasing");
+  }
+
+  private static void assertIndexPositionRejected(long position,
+      long previousPosition, String expectedMessage) throws Exception {
+    try {
+      LzoIndex.validateBlockPosition(position, previousPosition);
+      throw new AssertionError("Malformed LZO index position was accepted");
+    } catch (java.io.IOException expected) {
+      if (expected.getMessage().indexOf(expectedMessage) < 0) {
+        throw new AssertionError("Unexpected index position message: " +
+          expected.getMessage());
       }
     }
   }
@@ -502,6 +525,7 @@ def main():
         "docs/plans/2026-06-09-lzo-block-size-boundary.md",
         "docs/plans/2026-06-09-make-gate-aliases.md",
         "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md",
+        "docs/plans/2026-06-09-lzo-index-position-order-guard.md",
     ]
 
     for relative_path in required_files:
@@ -526,6 +550,7 @@ def main():
     index_open_plan = INDEX_OPEN_PLAN.read_text(encoding="utf-8") if INDEX_OPEN_PLAN.exists() else ""
     block_size_plan = BLOCK_SIZE_PLAN.read_text(encoding="utf-8") if BLOCK_SIZE_PLAN.exists() else ""
     index_rename_plan = INDEX_RENAME_PLAN.read_text(encoding="utf-8") if INDEX_RENAME_PLAN.exists() else ""
+    index_position_plan = INDEX_POSITION_PLAN.read_text(encoding="utf-8") if INDEX_POSITION_PLAN.exists() else ""
     native_plan = read("docs/plans/2026-06-08-native-packaging-guard.md")
     revision_plan = read("docs/plans/2026-06-08-build-revision-helper-guard.md")
 
@@ -600,6 +625,12 @@ def main():
     require("assertCorruptIndexByteCountRejected" in Path(__file__).read_text(encoding="utf-8"),
             "LzoIndex smoke check must cover malformed index byte counts",
             failures)
+    require("static void validateBlockPosition" in lzo_index_source and "position < 0" in lzo_index_source and "position <= previousPosition" in lzo_index_source and "validateBlockPosition(position, previousPosition)" in lzo_index_source,
+            "LzoIndex.readIndex must reject negative or non-increasing block positions",
+            failures)
+    require("assertInvalidIndexPositionsRejected" in Path(__file__).read_text(encoding="utf-8"),
+            "LzoIndex smoke check must cover malformed index block positions",
+            failures)
     require("static void validateBlockSizes" in lzo_index_source and "uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzo_index_source and "compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzo_index_source,
             "LzoIndex.createIndex must reject oversized LZO block sizes before seeking",
             failures)
@@ -635,6 +666,9 @@ def main():
     require("malformed index byte counts" in readme,
             "README must document the malformed LZO index byte-count guard",
             failures)
+    require("malformed index positions" in readme,
+            "README must document the malformed LZO index position guard",
+            failures)
     require("oversized LZO block sizes" in readme,
             "README must document the oversized LZO block-size guard",
             failures)
@@ -644,13 +678,13 @@ def main():
     require("index rename failures" in readme,
             "README must document the LZO index rename-failure guard",
             failures)
-    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision and "index rename failures" in vision,
+    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "malformed index positions" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision and "index rename failures" in vision,
             "VISION must describe the current static build baseline",
             failures)
-    require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security,
+    require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security and "malformed index positions" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
-    require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes and "index rename failures" in changes,
+    require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "malformed index positions" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes and "index rename failures" in changes,
             "CHANGES must record the legacy build baseline",
             failures)
     require("status: completed" in plan,
@@ -676,6 +710,9 @@ def main():
             failures)
     require("status: completed" in index_rename_plan,
             "index rename-failure plan must be marked completed",
+            failures)
+    require("status: completed" in index_position_plan,
+            "index position-order plan must be marked completed",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,
