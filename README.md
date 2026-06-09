@@ -66,9 +66,10 @@ It also exercises `src/native/packageNativeHadoop.sh` with temporary native
 library fixtures and `src/get_build_revision.sh` with archive-export fixtures
 so quoted path handling stays covered. The Java smoke harness also checks
 `LzoIndex` empty-index alignment and malformed index byte counts without
-requiring the full Ant test path. It also verifies that missing index files
-fall back to unsplittable reads while non-missing index open failures still
-surface to callers.
+requiring the full Ant test path. It also checks oversized LZO block sizes so
+corrupt streams are rejected before indexers or split readers seek across the
+file. Missing index files fall back to unsplittable reads while non-missing
+index open failures still surface to callers.
 
 For full legacy verification in a matching environment, run:
 
@@ -86,6 +87,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
 
 - Review changes touching network requests, sockets, or service endpoints; examples from the scan include build.xml, ivy/ivysettings.xml, ivy.xml, src/java/com/hadoop/compression/lzo/CChecksum.java, and 6 more.
 - Review changes touching file, media, JSON, XML, CSV, OCR, or data parsing; examples from the scan include build.xml, ivy/ivysettings.xml, ivy.xml, src/get_build_revision.sh, and 4 more.
+- Keep LZO block-size validation explicit for index generation, split readers,
+  and stream decompression because compressed files may be untrusted input.
 - Review changes touching shell execution, subprocess, or dynamic evaluation; examples from the scan include src/native/config/ltmain.sh.
 - Review changes touching database, model, or persistence code; examples from the scan include build.xml.
 
@@ -97,6 +100,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - See `docs/plans/2026-06-08-native-packaging-guard.md` for the current native packaging guardrail.
 - See `docs/plans/2026-06-08-build-revision-helper-guard.md` for the current build revision helper guardrail.
 - See `docs/plans/2026-06-09-lzo-index-open-failure-guard.md` for the LZO index open failures guardrail.
+- See `docs/plans/2026-06-09-lzo-block-size-boundary.md` for the oversized
+  LZO block-size guardrail.
 
 ## Contributing
 

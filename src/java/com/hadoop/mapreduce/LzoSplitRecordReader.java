@@ -3,6 +3,7 @@ package com.hadoop.mapreduce;
 import java.io.EOFException;
 import java.io.IOException;
 
+import com.hadoop.compression.lzo.LzoCodec;
 import com.hadoop.compression.lzo.LzopCodec;
 import com.hadoop.compression.lzo.LzopDecompressor;
 import org.apache.commons.logging.Log;
@@ -73,12 +74,22 @@ public class LzoSplitRecordReader extends RecordReader<Path, LongWritable> {
     } else if (uncompressedBlockSize < 0) {
       throw new EOFException("Could not read uncompressed block size at position " +
                              rawInputStream.getPos() + " in file " + lzoFile);
+    } else if (uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE) {
+      throw new IOException("Uncompressed block size " + uncompressedBlockSize +
+                            " exceeds max block size " + LzoCodec.MAX_BLOCK_SIZE +
+                            " at position " + rawInputStream.getPos() +
+                            " in file " + lzoFile);
     }
 
     int compressedBlockSize = rawInputStream.readInt();
     if (compressedBlockSize <= 0) {
       throw new EOFException("Could not read compressed block size at position " +
                              rawInputStream.getPos() + " in file " + lzoFile);
+    } else if (compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE) {
+      throw new IOException("Compressed block size " + compressedBlockSize +
+                            " exceeds max block size " + LzoCodec.MAX_BLOCK_SIZE +
+                            " at position " + rawInputStream.getPos() +
+                            " in file " + lzoFile);
     }
 
     // See LzopInputStream.getCompressedData
@@ -127,4 +138,3 @@ public class LzoSplitRecordReader extends RecordReader<Path, LongWritable> {
     rawInputStream.close();
   }
 }
-

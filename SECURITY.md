@@ -32,6 +32,8 @@ Helpful reports include:
 - Review found shell execution, subprocess, or dynamic evaluation surfaces; changes in those areas should receive security-focused review before merge.
 - Review found database, model, query, or persistence-related code; changes in those areas should receive security-focused review before merge.
 - Legacy Ant/Ivy dependency metadata is tracked in `build.xml`, `ivy.xml`, and `ivy/libraries.properties`. Checked-in Maven Central download endpoints should use HTTPS, and full rebuilds should document the Ant, Hadoop, Java, and native LZO toolchain used.
+- LZO files may be untrusted compressed input. Keep malformed index byte counts,
+  missing-index fallback behavior, open-failure propagation, and oversized block sizes covered before changing index or stream parsing code.
 
 ## Service and API Notes
 

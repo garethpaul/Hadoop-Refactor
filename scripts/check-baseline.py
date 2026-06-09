@@ -13,6 +13,7 @@ PLAN = ROOT / "docs/plans/2026-06-08-legacy-build-baseline.md"
 EMPTY_INDEX_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-empty-boundary.md"
 INDEX_BYTE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-byte-count-guard.md"
 INDEX_OPEN_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-open-failure-guard.md"
+BLOCK_SIZE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-block-size-boundary.md"
 
 
 def require(condition, message, failures):
@@ -136,9 +137,20 @@ def verify_lzo_index_empty_alignment(failures):
         stub_dir.mkdir(parents=True)
         logging_stub_dir = workdir / "org/apache/commons/logging"
         logging_stub_dir.mkdir(parents=True)
+        codec_stub = stub_dir / "LzoCodec.java"
         decompressor_stub = stub_dir / "LzopDecompressor.java"
         log_stub = logging_stub_dir / "Log.java"
         log_factory_stub = logging_stub_dir / "LogFactory.java"
+        codec_stub.write_text(
+            """
+package com.hadoop.compression.lzo;
+
+public class LzoCodec {
+  public static final int MAX_BLOCK_SIZE = 64 * 1024 * 1024;
+}
+""".lstrip(),
+            encoding="utf-8",
+        )
         decompressor_stub.write_text(
             """
 package com.hadoop.compression.lzo;
@@ -255,6 +267,7 @@ public class LzoIndexEmptyHarness {
     assertEquals(20, empty.alignSliceEndToIndex(5, 20), "alignSliceEndToIndex");
     assertEquals(2, LzoIndex.getBlockCount(16), "getBlockCount");
     assertCorruptIndexByteCountRejected();
+    assertOversizedIndexBlockSizesRejected();
     assertMissingIndexReturnsEmpty();
     assertOpenFailurePropagates();
   }
@@ -272,6 +285,24 @@ public class LzoIndexEmptyHarness {
     } catch (java.io.IOException expected) {
       if (expected.getMessage().indexOf("multiple of 8") < 0) {
         throw new AssertionError("Unexpected corrupt index message: " + expected.getMessage());
+      }
+    }
+  }
+
+  private static void assertOversizedIndexBlockSizesRejected() throws Exception {
+    assertBlockSizeRejected(LzoCodec.MAX_BLOCK_SIZE + 1, 1, "Uncompressed block size");
+    assertBlockSizeRejected(1, 0, "Could not read compressed block size");
+    assertBlockSizeRejected(1, LzoCodec.MAX_BLOCK_SIZE + 1, "Compressed block size");
+  }
+
+  private static void assertBlockSizeRejected(int uncompressedBlockSize,
+      int compressedBlockSize, String expectedMessage) throws Exception {
+    try {
+      LzoIndex.validateBlockSizes(uncompressedBlockSize, compressedBlockSize);
+      throw new AssertionError("Malformed LZO block sizes were accepted");
+    } catch (java.io.IOException expected) {
+      if (expected.getMessage().indexOf(expectedMessage) < 0) {
+        throw new AssertionError("Unexpected block-size message: " + expected.getMessage());
       }
     }
   }
@@ -372,6 +403,7 @@ public class LzoIndexEmptyHarness {
                 str(class_dir),
                 str(log_stub),
                 str(log_factory_stub),
+                str(codec_stub),
                 str(decompressor_stub),
                 str(lzo_index),
                 str(harness),
@@ -431,6 +463,7 @@ def main():
         "docs/plans/2026-06-09-lzo-index-empty-boundary.md",
         "docs/plans/2026-06-09-lzo-index-byte-count-guard.md",
         "docs/plans/2026-06-09-lzo-index-open-failure-guard.md",
+        "docs/plans/2026-06-09-lzo-block-size-boundary.md",
     ]
 
     for relative_path in required_files:
@@ -439,6 +472,8 @@ def main():
     build_xml = read("build.xml")
     ivysettings = read("ivy/ivysettings.xml")
     lzo_index_source = read("src/java/com/hadoop/compression/lzo/LzoIndex.java")
+    lzop_input_source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
+    split_record_reader_source = read("src/java/com/hadoop/mapreduce/LzoSplitRecordReader.java")
     package_script = read("src/native/packageNativeHadoop.sh")
     build_revision_script = read("src/get_build_revision.sh")
     readme = read("README.md")
@@ -450,6 +485,7 @@ def main():
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
     index_open_plan = INDEX_OPEN_PLAN.read_text(encoding="utf-8") if INDEX_OPEN_PLAN.exists() else ""
+    block_size_plan = BLOCK_SIZE_PLAN.read_text(encoding="utf-8") if BLOCK_SIZE_PLAN.exists() else ""
     native_plan = read("docs/plans/2026-06-08-native-packaging-guard.md")
     revision_plan = read("docs/plans/2026-06-08-build-revision-helper-guard.md")
 
@@ -521,6 +557,18 @@ def main():
     require("assertCorruptIndexByteCountRejected" in Path(__file__).read_text(encoding="utf-8"),
             "LzoIndex smoke check must cover malformed index byte counts",
             failures)
+    require("static void validateBlockSizes" in lzo_index_source and "uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzo_index_source and "compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzo_index_source,
+            "LzoIndex.createIndex must reject oversized LZO block sizes before seeking",
+            failures)
+    require("assertOversizedIndexBlockSizesRejected" in Path(__file__).read_text(encoding="utf-8"),
+            "LzoIndex smoke check must cover malformed LZO block sizes",
+            failures)
+    require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source and "compressedLen <= 0" in lzop_input_source and "compressedLen > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source,
+            "LzopInputStream must reject invalid compressed and uncompressed block sizes",
+            failures)
+    require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source and "compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source,
+            "LzoSplitRecordReader must reject oversized LZO block sizes before seeking",
+            failures)
     require("import java.io.FileNotFoundException;" in lzo_index_source and "catch (FileNotFoundException fileNotFound)" in lzo_index_source,
             "LzoIndex.readIndex must only fall back when the index file is missing",
             failures)
@@ -538,16 +586,19 @@ def main():
     require("malformed index byte counts" in readme,
             "README must document the malformed LZO index byte-count guard",
             failures)
+    require("oversized LZO block sizes" in readme,
+            "README must document the oversized LZO block-size guard",
+            failures)
     require("index open failures" in readme,
             "README must document the LZO index open-failure guard",
             failures)
-    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "index open failures" in vision,
+    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision,
             "VISION must describe the current static build baseline",
             failures)
-    require("Maven Central" in security and "HTTPS" in security,
+    require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
-    require("HTTPS" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "index open failures" in changes,
+    require("HTTPS" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes,
             "CHANGES must record the legacy build baseline",
             failures)
     require("status: completed" in plan,
@@ -567,6 +618,9 @@ def main():
             failures)
     require("status: completed" in index_open_plan,
             "index open-failure plan must be marked completed",
+            failures)
+    require("status: completed" in block_size_plan,
+            "block-size boundary plan must be marked completed",
             failures)
 
     if failures:

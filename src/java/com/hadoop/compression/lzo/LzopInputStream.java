@@ -240,6 +240,16 @@ public class LzopInputStream extends BlockDecompressorStream {
       } catch (EOFException e) {
         return -1;
       }
+      if (uncompressedBlockSize == 0) {
+        eof = true;
+        return -1;
+      } else if (uncompressedBlockSize < 0) {
+        throw new EOFException("Could not read uncompressed block size");
+      } else if (uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE) {
+        throw new IOException("Uncompressed length " + uncompressedBlockSize +
+          " exceeds max block size " + LzoCodec.MAX_BLOCK_SIZE +
+          " (probably corrupt file)");
+      }
       noUncompressedBytes = 0;
     }
 
@@ -281,6 +291,11 @@ public class LzopInputStream extends BlockDecompressorStream {
     // Get the size of the compressed chunk
     int compressedLen = readInt(in, buf, 4);
     noCompressedBytes += 4;
+
+    if (compressedLen <= 0) {
+      throw new IOException("Compressed length " + compressedLen +
+        " must be positive (probably corrupt file)");
+    }
 
     if (compressedLen > LzoCodec.MAX_BLOCK_SIZE) {
       throw new IOException("Compressed length " + compressedLen +

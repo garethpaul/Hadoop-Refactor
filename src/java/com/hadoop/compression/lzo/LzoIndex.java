@@ -131,6 +131,23 @@ public class LzoIndex {
     return indexByteCount / 8;
   }
 
+  static void validateBlockSizes(int uncompressedBlockSize,
+                                 int compressedBlockSize) throws IOException {
+    if (uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE) {
+      throw new IOException("Uncompressed block size " + uncompressedBlockSize +
+        " exceeds max block size " + LzoCodec.MAX_BLOCK_SIZE +
+        " (probably corrupt file)");
+    }
+    if (compressedBlockSize <= 0) {
+      throw new IOException("Could not read compressed block size");
+    }
+    if (compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE) {
+      throw new IOException("Compressed block size " + compressedBlockSize +
+        " exceeds max block size " + LzoCodec.MAX_BLOCK_SIZE +
+        " (probably corrupt file)");
+    }
+  }
+
   /**
    * Nudge a given file slice start to the nearest LZO block start no earlier than
    * the current slice start.
@@ -258,9 +275,7 @@ public class LzoIndex {
         }
 
         int compressedBlockSize = is.readInt();
-        if (compressedBlockSize <= 0) {
-          throw new IOException("Could not read compressed block size");
-        }
+        validateBlockSizes(uncompressedBlockSize, compressedBlockSize);
 
         // See LzopInputStream.getCompressedData
         boolean isUncompressedBlock = (uncompressedBlockSize == compressedBlockSize);
