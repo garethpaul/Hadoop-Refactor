@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -77,6 +78,47 @@ def verify_native_packaging_script(failures):
         )
 
 
+def verify_build_revision_script(failures):
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor revision-") as workdir:
+        fixture_root = Path(workdir) / "archive root with spaces"
+        fixture_src = fixture_root / "src"
+        fixture_src.mkdir(parents=True)
+        fixture_script = fixture_src / "get_build_revision.sh"
+        shutil.copy2(ROOT / "src/get_build_revision.sh", fixture_script)
+
+        def run_fixture(extra_env=None):
+            env = os.environ.copy()
+            env.pop("BUILD_REVISION", None)
+            if extra_env:
+                env.update(extra_env)
+            return subprocess.run(
+                ["bash", str(fixture_script)],
+                cwd=str(fixture_root),
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        result = run_fixture({"BUILD_REVISION": "manual revision with spaces"})
+        require(result.returncode == 0 and result.stdout == "manual revision with spaces\n",
+                "get_build_revision.sh must preserve quoted BUILD_REVISION overrides",
+                failures)
+
+        archive_version = fixture_root / ".archive-version"
+        archive_version.write_text("archive revision with spaces\n", encoding="utf-8")
+        result = run_fixture()
+        require(result.returncode == 0 and result.stdout == "archive revision with spaces\n",
+                "get_build_revision.sh must read archive revisions from script-relative paths with spaces",
+                failures)
+
+        archive_version.write_text("$Format:%H$\n", encoding="utf-8")
+        result = run_fixture()
+        require(result.returncode == 0 and result.stdout == "Unknown build revision\n",
+                "get_build_revision.sh must ignore unexpanded archive-version placeholders",
+                failures)
+
+
 def main():
     failures = []
     required_files = [
@@ -99,6 +141,7 @@ def main():
         "src/test/com/hadoop/compression/lzo/TestLzoCodec.java",
         "docs/plans/2026-06-08-legacy-build-baseline.md",
         "docs/plans/2026-06-08-native-packaging-guard.md",
+        "docs/plans/2026-06-08-build-revision-helper-guard.md",
     ]
 
     for relative_path in required_files:
@@ -107,6 +150,7 @@ def main():
     build_xml = read("build.xml")
     ivysettings = read("ivy/ivysettings.xml")
     package_script = read("src/native/packageNativeHadoop.sh")
+    build_revision_script = read("src/get_build_revision.sh")
     readme = read("README.md")
     vision = read("VISION.md")
     security = read("SECURITY.md")
@@ -114,6 +158,7 @@ def main():
     gitignore = read(".gitignore")
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     native_plan = read("docs/plans/2026-06-08-native-packaging-guard.md")
+    revision_plan = read("docs/plans/2026-06-08-build-revision-helper-guard.md")
 
     for xml_file in ["build.xml", "ivy.xml", "ivy/ivysettings.xml"]:
         try:
@@ -173,20 +218,24 @@ def main():
             "packageNativeHadoop.sh must quote native package paths",
             failures)
     verify_native_packaging_script(failures)
+    require("set -euo pipefail" in build_revision_script and '"${BUILD_REVISION:-}"' in build_revision_script and "printf '%s\\n'" in build_revision_script and 'dirname "${BASH_SOURCE[0]}"' in build_revision_script and 'cat "$ARCHIVE_VERSION_FILE"' in build_revision_script,
+            "get_build_revision.sh must quote overrides and script-relative archive fallback paths",
+            failures)
+    verify_build_revision_script(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
             ".gitignore must exclude generated build products and local machine files",
             failures)
-    require("make check" in readme and "scripts/check-baseline.py" in readme and "Ant" in readme and "Java 8" in readme,
+    require("make check" in readme and "scripts/check-baseline.py" in readme and "Ant" in readme and "Java 8" in readme and "build revision" in readme,
             "README must document static verification and legacy build prerequisites",
             failures)
-    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision,
+    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision,
             "VISION must describe the current static build baseline",
             failures)
     require("Maven Central" in security and "HTTPS" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
-    require("HTTPS" in changes and "make check" in changes,
+    require("HTTPS" in changes and "make check" in changes and "build revision" in changes,
             "CHANGES must record the legacy build baseline",
             failures)
     require("status: completed" in plan,
@@ -194,6 +243,9 @@ def main():
             failures)
     require("status: completed" in native_plan,
             "native packaging plan must be marked completed",
+            failures)
+    require("status: completed" in revision_plan,
+            "build revision helper plan must be marked completed",
             failures)
 
     if failures:

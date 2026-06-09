@@ -22,7 +22,7 @@ Priority:
 - Keep native LZO, Java, Hadoop, Ant, and Ivy build requirements documented
 - Maintain troubleshooting notes for headers, shared libraries, and `JAVA_HOME`
 - Keep `scripts/check-baseline.py` passing for XML, shell, source inventory,
-  native packaging, and HTTPS build-download guardrails
+  native packaging, build revision stamping, and HTTPS build-download guardrails
 - Avoid broad Hadoop upgrades without compatibility planning
 
 Next priorities:
@@ -51,8 +51,9 @@ Native binaries and generated artifacts need provenance and should not be
 silently replaced.
 
 Current baseline: `make check` runs `scripts/check-baseline.py`, which validates
-legacy Ant/Ivy metadata, native shell script syntax, source/test inventory, and
-HTTPS download endpoints without requiring Ant on the local host.
+legacy Ant/Ivy metadata, native shell script syntax, source/test inventory,
+build revision helper fallback behavior, and HTTPS download endpoints without
+requiring Ant on the local host.
 
 ## What We Will Not Merge (For Now)
 
