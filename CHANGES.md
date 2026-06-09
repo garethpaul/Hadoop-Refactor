@@ -6,6 +6,8 @@
   `NOT_FOUND` or file-size alignment instead of a null-pointer failure.
 - Rejected malformed index byte counts that are not aligned to 8-byte block
   offsets.
+- Preserved missing-index fallback while surfacing non-missing `LzoIndex`
+  index open failures.
 
 ## 2026-06-08
 

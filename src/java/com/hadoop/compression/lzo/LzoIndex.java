@@ -19,6 +19,7 @@
 package com.hadoop.compression.lzo;
 
 import java.io.EOFException;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -186,7 +187,7 @@ public class LzoIndex {
 
     try {
       indexIn = fs.open(indexFile);
-    } catch (IOException fileNotFound) {
+    } catch (FileNotFoundException fileNotFound) {
       // return empty index, fall back to the unsplittable mode
       return new LzoIndex();
     }

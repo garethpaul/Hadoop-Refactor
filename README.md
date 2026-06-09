@@ -66,7 +66,9 @@ It also exercises `src/native/packageNativeHadoop.sh` with temporary native
 library fixtures and `src/get_build_revision.sh` with archive-export fixtures
 so quoted path handling stays covered. The Java smoke harness also checks
 `LzoIndex` empty-index alignment and malformed index byte counts without
-requiring the full Ant test path.
+requiring the full Ant test path. It also verifies that missing index files
+fall back to unsplittable reads while non-missing index open failures still
+surface to callers.
 
 For full legacy verification in a matching environment, run:
 
@@ -94,6 +96,7 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Run `make check` before pushing changes to build metadata, native scripts, Java source, tests, or dependency download configuration.
 - See `docs/plans/2026-06-08-native-packaging-guard.md` for the current native packaging guardrail.
 - See `docs/plans/2026-06-08-build-revision-helper-guard.md` for the current build revision helper guardrail.
+- See `docs/plans/2026-06-09-lzo-index-open-failure-guard.md` for the LZO index open failures guardrail.
 
 ## Contributing
 

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "docs/plans/2026-06-08-legacy-build-baseline.md"
 EMPTY_INDEX_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-empty-boundary.md"
 INDEX_BYTE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-byte-count-guard.md"
+INDEX_OPEN_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-open-failure-guard.md"
 
 
 def require(condition, message, failures):
@@ -133,7 +134,11 @@ def verify_lzo_index_empty_alignment(failures):
         harness = workdir / "LzoIndexEmptyHarness.java"
         stub_dir = workdir / "com/hadoop/compression/lzo"
         stub_dir.mkdir(parents=True)
+        logging_stub_dir = workdir / "org/apache/commons/logging"
+        logging_stub_dir.mkdir(parents=True)
         decompressor_stub = stub_dir / "LzopDecompressor.java"
+        log_stub = logging_stub_dir / "Log.java"
+        log_factory_stub = logging_stub_dir / "LogFactory.java"
         decompressor_stub.write_text(
             """
 package com.hadoop.compression.lzo;
@@ -162,9 +167,84 @@ public class LzopDecompressor implements Decompressor {
 """.lstrip(),
             encoding="utf-8",
         )
+        log_stub.write_text(
+            """
+package org.apache.commons.logging;
+
+public interface Log {
+  void debug(Object message);
+  void debug(Object message, Throwable throwable);
+  void info(Object message);
+  void info(Object message, Throwable throwable);
+  void warn(Object message);
+  void warn(Object message, Throwable throwable);
+  void error(Object message);
+  void error(Object message, Throwable throwable);
+  void fatal(Object message);
+  void fatal(Object message, Throwable throwable);
+  void trace(Object message);
+  void trace(Object message, Throwable throwable);
+  boolean isDebugEnabled();
+  boolean isInfoEnabled();
+  boolean isWarnEnabled();
+  boolean isErrorEnabled();
+  boolean isFatalEnabled();
+  boolean isTraceEnabled();
+}
+""".lstrip(),
+            encoding="utf-8",
+        )
+        log_factory_stub.write_text(
+            """
+package org.apache.commons.logging;
+
+public class LogFactory {
+  private static final Log LOG = new NoopLog();
+
+  public static Log getLog(Class<?> clazz) {
+    return LOG;
+  }
+
+  private static class NoopLog implements Log {
+    public void debug(Object message) { }
+    public void debug(Object message, Throwable throwable) { }
+    public void info(Object message) { }
+    public void info(Object message, Throwable throwable) { }
+    public void warn(Object message) { }
+    public void warn(Object message, Throwable throwable) { }
+    public void error(Object message) { }
+    public void error(Object message, Throwable throwable) { }
+    public void fatal(Object message) { }
+    public void fatal(Object message, Throwable throwable) { }
+    public void trace(Object message) { }
+    public void trace(Object message, Throwable throwable) { }
+    public boolean isDebugEnabled() { return false; }
+    public boolean isInfoEnabled() { return false; }
+    public boolean isWarnEnabled() { return false; }
+    public boolean isErrorEnabled() { return false; }
+    public boolean isFatalEnabled() { return false; }
+    public boolean isTraceEnabled() { return false; }
+  }
+}
+""".lstrip(),
+            encoding="utf-8",
+        )
         harness.write_text(
             """
 package com.hadoop.compression.lzo;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.net.URI;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.util.Progressable;
 
 public class LzoIndexEmptyHarness {
   public static void main(String[] args) throws Exception {
@@ -175,6 +255,8 @@ public class LzoIndexEmptyHarness {
     assertEquals(20, empty.alignSliceEndToIndex(5, 20), "alignSliceEndToIndex");
     assertEquals(2, LzoIndex.getBlockCount(16), "getBlockCount");
     assertCorruptIndexByteCountRejected();
+    assertMissingIndexReturnsEmpty();
+    assertOpenFailurePropagates();
   }
 
   private static void assertEquals(long expected, long actual, String label) {
@@ -193,6 +275,86 @@ public class LzoIndexEmptyHarness {
       }
     }
   }
+
+  private static void assertMissingIndexReturnsEmpty() throws Exception {
+    LzoIndex missing = LzoIndex.readIndex(
+        new ThrowingFileSystem(new FileNotFoundException("missing index")),
+        new Path("/data/example.lzo"));
+    if (!missing.isEmpty()) {
+      throw new AssertionError("Missing index should return an empty LzoIndex");
+    }
+  }
+
+  private static void assertOpenFailurePropagates() throws Exception {
+    try {
+      LzoIndex.readIndex(
+          new ThrowingFileSystem(new IOException("permission denied")),
+          new Path("/data/example.lzo"));
+      throw new AssertionError("Non-missing index open failure was swallowed");
+    } catch (IOException expected) {
+      if (expected.getMessage().indexOf("permission denied") < 0) {
+        throw new AssertionError("Unexpected open failure: " + expected.getMessage());
+      }
+    }
+  }
+
+  private static class ThrowingFileSystem extends FileSystem {
+    private final IOException openException;
+
+    ThrowingFileSystem(IOException openException) {
+      this.openException = openException;
+      setConf(new Configuration());
+    }
+
+    public URI getUri() {
+      return URI.create("throwing:///");
+    }
+
+    public FSDataInputStream open(Path f, int bufferSize) throws IOException {
+      throw openException;
+    }
+
+    public FSDataOutputStream create(Path f, FsPermission permission, boolean overwrite,
+        int bufferSize, short replication, long blockSize, Progressable progress)
+        throws IOException {
+      throw new UnsupportedOperationException();
+    }
+
+    public FSDataOutputStream append(Path f, int bufferSize, Progressable progress)
+        throws IOException {
+      throw new UnsupportedOperationException();
+    }
+
+    public boolean rename(Path src, Path dst) throws IOException {
+      return false;
+    }
+
+    public boolean delete(Path f) throws IOException {
+      return false;
+    }
+
+    public boolean delete(Path f, boolean recursive) throws IOException {
+      return false;
+    }
+
+    public FileStatus[] listStatus(Path f) throws IOException {
+      return new FileStatus[0];
+    }
+
+    public void setWorkingDirectory(Path newDir) { }
+
+    public Path getWorkingDirectory() {
+      return new Path("/");
+    }
+
+    public boolean mkdirs(Path f, FsPermission permission) throws IOException {
+      return false;
+    }
+
+    public FileStatus getFileStatus(Path f) throws IOException {
+      throw new FileNotFoundException(f.toString());
+    }
+  }
 }
 """.lstrip(),
             encoding="utf-8",
@@ -208,6 +370,8 @@ public class LzoIndexEmptyHarness {
                 classpath,
                 "-d",
                 str(class_dir),
+                str(log_stub),
+                str(log_factory_stub),
                 str(decompressor_stub),
                 str(lzo_index),
                 str(harness),
@@ -234,7 +398,7 @@ public class LzoIndexEmptyHarness {
         )
         require(
             run_result.returncode == 0,
-            "LzoIndex empty alignment must return safe boundaries: "
+            "LzoIndex smoke harness must return safe boundaries and propagate open failures: "
             + (run_result.stderr or run_result.stdout).strip(),
             failures,
         )
@@ -266,6 +430,7 @@ def main():
         "docs/plans/2026-06-08-build-revision-helper-guard.md",
         "docs/plans/2026-06-09-lzo-index-empty-boundary.md",
         "docs/plans/2026-06-09-lzo-index-byte-count-guard.md",
+        "docs/plans/2026-06-09-lzo-index-open-failure-guard.md",
     ]
 
     for relative_path in required_files:
@@ -284,6 +449,7 @@ def main():
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
+    index_open_plan = INDEX_OPEN_PLAN.read_text(encoding="utf-8") if INDEX_OPEN_PLAN.exists() else ""
     native_plan = read("docs/plans/2026-06-08-native-packaging-guard.md")
     revision_plan = read("docs/plans/2026-06-08-build-revision-helper-guard.md")
 
@@ -355,6 +521,12 @@ def main():
     require("assertCorruptIndexByteCountRejected" in Path(__file__).read_text(encoding="utf-8"),
             "LzoIndex smoke check must cover malformed index byte counts",
             failures)
+    require("import java.io.FileNotFoundException;" in lzo_index_source and "catch (FileNotFoundException fileNotFound)" in lzo_index_source,
+            "LzoIndex.readIndex must only fall back when the index file is missing",
+            failures)
+    require("assertMissingIndexReturnsEmpty" in Path(__file__).read_text(encoding="utf-8") and "assertOpenFailurePropagates" in Path(__file__).read_text(encoding="utf-8"),
+            "LzoIndex smoke check must cover missing-index fallback and non-missing open failures",
+            failures)
     verify_lzo_index_empty_alignment(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
@@ -366,13 +538,16 @@ def main():
     require("malformed index byte counts" in readme,
             "README must document the malformed LZO index byte-count guard",
             failures)
-    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision,
+    require("index open failures" in readme,
+            "README must document the LZO index open-failure guard",
+            failures)
+    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "index open failures" in vision,
             "VISION must describe the current static build baseline",
             failures)
     require("Maven Central" in security and "HTTPS" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
-    require("HTTPS" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes,
+    require("HTTPS" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "index open failures" in changes,
             "CHANGES must record the legacy build baseline",
             failures)
     require("status: completed" in plan,
@@ -389,6 +564,9 @@ def main():
             failures)
     require("status: completed" in index_byte_plan,
             "index byte-count plan must be marked completed",
+            failures)
+    require("status: completed" in index_open_plan,
+            "index open-failure plan must be marked completed",
             failures)
 
     if failures:
