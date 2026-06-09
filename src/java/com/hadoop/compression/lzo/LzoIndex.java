@@ -122,6 +122,14 @@ public class LzoIndex {
     return blockPositions_ == null || blockPositions_.length == 0;
   }
 
+  static int getBlockCount(int indexByteCount) throws IOException {
+    if (indexByteCount % 8 != 0) {
+      throw new IOException("Corrupt LZO index: byte count " + indexByteCount +
+        " is not a multiple of 8");
+    }
+    return indexByteCount / 8;
+  }
+
   /**
    * Nudge a given file slice start to the nearest LZO block start no earlier than
    * the current slice start.
@@ -190,7 +198,7 @@ public class LzoIndex {
     IOUtils.copyBytes(indexIn, bytes, 4*1024, true);
 
     ByteBuffer bytesIn = ByteBuffer.wrap(bytes.getData(), 0, bytes.getLength());
-    int blocks = bytesIn.remaining()/8;
+    int blocks = getBlockCount(bytesIn.remaining());
     LzoIndex index = new LzoIndex(blocks);
 
     for (int i = 0; i < blocks; i++) {

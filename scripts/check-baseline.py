@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "docs/plans/2026-06-08-legacy-build-baseline.md"
 EMPTY_INDEX_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-empty-boundary.md"
+INDEX_BYTE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-byte-count-guard.md"
 
 
 def require(condition, message, failures):
@@ -163,20 +164,33 @@ public class LzopDecompressor implements Decompressor {
         )
         harness.write_text(
             """
-import com.hadoop.compression.lzo.LzoIndex;
+package com.hadoop.compression.lzo;
 
 public class LzoIndexEmptyHarness {
-  public static void main(String[] args) {
+  public static void main(String[] args) throws Exception {
     LzoIndex empty = new LzoIndex();
     assertEquals(0, empty.getNumberOfBlocks(), "getNumberOfBlocks");
     assertEquals(LzoIndex.NOT_FOUND, empty.findNextPosition(0), "findNextPosition");
     assertEquals(LzoIndex.NOT_FOUND, empty.alignSliceStartToIndex(1, 20), "alignSliceStartToIndex");
     assertEquals(20, empty.alignSliceEndToIndex(5, 20), "alignSliceEndToIndex");
+    assertEquals(2, LzoIndex.getBlockCount(16), "getBlockCount");
+    assertCorruptIndexByteCountRejected();
   }
 
   private static void assertEquals(long expected, long actual, String label) {
     if (expected != actual) {
       throw new AssertionError(label + " expected " + expected + " but got " + actual);
+    }
+  }
+
+  private static void assertCorruptIndexByteCountRejected() throws Exception {
+    try {
+      LzoIndex.getBlockCount(7);
+      throw new AssertionError("Corrupt index byte count was accepted");
+    } catch (java.io.IOException expected) {
+      if (expected.getMessage().indexOf("multiple of 8") < 0) {
+        throw new AssertionError("Unexpected corrupt index message: " + expected.getMessage());
+      }
     }
   }
 }
@@ -212,7 +226,7 @@ public class LzoIndexEmptyHarness {
             return
 
         run_result = subprocess.run(
-            ["java", "-cp", f"{class_dir}:{hadoop_jar}", "LzoIndexEmptyHarness"],
+            ["java", "-cp", f"{class_dir}:{hadoop_jar}", "com.hadoop.compression.lzo.LzoIndexEmptyHarness"],
             cwd=str(ROOT),
             text=True,
             capture_output=True,
@@ -245,11 +259,13 @@ def main():
         "src/native/bootstrap.sh",
         "src/native/packageNativeHadoop.sh",
         "src/java/com/hadoop/compression/lzo/LzoCodec.java",
+        "src/java/com/hadoop/compression/lzo/LzoIndex.java",
         "src/test/com/hadoop/compression/lzo/TestLzoCodec.java",
         "docs/plans/2026-06-08-legacy-build-baseline.md",
         "docs/plans/2026-06-08-native-packaging-guard.md",
         "docs/plans/2026-06-08-build-revision-helper-guard.md",
         "docs/plans/2026-06-09-lzo-index-empty-boundary.md",
+        "docs/plans/2026-06-09-lzo-index-byte-count-guard.md",
     ]
 
     for relative_path in required_files:
@@ -257,6 +273,7 @@ def main():
 
     build_xml = read("build.xml")
     ivysettings = read("ivy/ivysettings.xml")
+    lzo_index_source = read("src/java/com/hadoop/compression/lzo/LzoIndex.java")
     package_script = read("src/native/packageNativeHadoop.sh")
     build_revision_script = read("src/get_build_revision.sh")
     readme = read("README.md")
@@ -266,6 +283,7 @@ def main():
     gitignore = read(".gitignore")
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
+    index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
     native_plan = read("docs/plans/2026-06-08-native-packaging-guard.md")
     revision_plan = read("docs/plans/2026-06-08-build-revision-helper-guard.md")
 
@@ -331,6 +349,12 @@ def main():
             "get_build_revision.sh must quote overrides and script-relative archive fallback paths",
             failures)
     verify_build_revision_script(failures)
+    require("static int getBlockCount(int indexByteCount)" in lzo_index_source and "indexByteCount % 8" in lzo_index_source and "multiple of 8" in lzo_index_source and "getBlockCount(bytesIn.remaining())" in lzo_index_source,
+            "LzoIndex must reject malformed index files whose byte count is not 8-byte aligned",
+            failures)
+    require("assertCorruptIndexByteCountRejected" in Path(__file__).read_text(encoding="utf-8"),
+            "LzoIndex smoke check must cover malformed index byte counts",
+            failures)
     verify_lzo_index_empty_alignment(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
@@ -339,13 +363,16 @@ def main():
     require("make check" in readme and "scripts/check-baseline.py" in readme and "Ant" in readme and "Java 8" in readme and "build revision" in readme,
             "README must document static verification and legacy build prerequisites",
             failures)
-    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision,
+    require("malformed index byte counts" in readme,
+            "README must document the malformed LZO index byte-count guard",
+            failures)
+    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision,
             "VISION must describe the current static build baseline",
             failures)
     require("Maven Central" in security and "HTTPS" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
-    require("HTTPS" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes,
+    require("HTTPS" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes,
             "CHANGES must record the legacy build baseline",
             failures)
     require("status: completed" in plan,
@@ -359,6 +386,9 @@ def main():
             failures)
     require("status: completed" in empty_index_plan,
             "empty-index boundary plan must be marked completed",
+            failures)
+    require("status: completed" in index_byte_plan,
+            "index byte-count plan must be marked completed",
             failures)
 
     if failures:

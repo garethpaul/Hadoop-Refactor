@@ -64,7 +64,9 @@ make check
 The baseline runs `scripts/check-baseline.py`, validates Ant/Ivy XML, checks shell syntax for native packaging scripts, verifies the Java/native/test source inventory, and confirms the checked-in Maven/Ivy download endpoints use HTTPS. It does not require Ant.
 It also exercises `src/native/packageNativeHadoop.sh` with temporary native
 library fixtures and `src/get_build_revision.sh` with archive-export fixtures
-so quoted path handling stays covered.
+so quoted path handling stays covered. The Java smoke harness also checks
+`LzoIndex` empty-index alignment and malformed index byte counts without
+requiring the full Ant test path.
 
 For full legacy verification in a matching environment, run:
 

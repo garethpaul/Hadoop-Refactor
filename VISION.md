@@ -52,8 +52,9 @@ silently replaced.
 
 Current baseline: `make check` runs `scripts/check-baseline.py`, which validates
 legacy Ant/Ivy metadata, native shell script syntax, source/test inventory,
-build revision helper fallback behavior, and HTTPS download endpoints without
-requiring Ant on the local host.
+build revision helper fallback behavior, `LzoIndex` empty-index handling,
+malformed index byte counts, and HTTPS download endpoints without requiring Ant
+on the local host.
 
 ## What We Will Not Merge (For Now)
 
