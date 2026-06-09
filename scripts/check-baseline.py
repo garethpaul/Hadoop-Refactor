@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "docs/plans/2026-06-08-legacy-build-baseline.md"
+EMPTY_INDEX_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-empty-boundary.md"
 
 
 def require(condition, message, failures):
@@ -119,6 +120,112 @@ def verify_build_revision_script(failures):
                 failures)
 
 
+def verify_lzo_index_empty_alignment(failures):
+    if shutil.which("javac") is None or shutil.which("java") is None:
+        failures.append("javac and java must be available for the LzoIndex smoke check")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor-lzo-index-") as workdir:
+        workdir = Path(workdir)
+        class_dir = workdir / "classes"
+        class_dir.mkdir()
+        harness = workdir / "LzoIndexEmptyHarness.java"
+        stub_dir = workdir / "com/hadoop/compression/lzo"
+        stub_dir.mkdir(parents=True)
+        decompressor_stub = stub_dir / "LzopDecompressor.java"
+        decompressor_stub.write_text(
+            """
+package com.hadoop.compression.lzo;
+
+import java.io.IOException;
+import org.apache.hadoop.io.compress.Decompressor;
+
+public class LzopDecompressor implements Decompressor {
+  public int getCompressedChecksumsCount() {
+    return 0;
+  }
+
+  public int getDecompressedChecksumsCount() {
+    return 0;
+  }
+
+  public void setInput(byte[] b, int off, int len) { }
+  public boolean needsInput() { return true; }
+  public void setDictionary(byte[] b, int off, int len) { }
+  public boolean needsDictionary() { return false; }
+  public boolean finished() { return true; }
+  public int decompress(byte[] b, int off, int len) throws IOException { return 0; }
+  public void reset() { }
+  public void end() { }
+}
+""".lstrip(),
+            encoding="utf-8",
+        )
+        harness.write_text(
+            """
+import com.hadoop.compression.lzo.LzoIndex;
+
+public class LzoIndexEmptyHarness {
+  public static void main(String[] args) {
+    LzoIndex empty = new LzoIndex();
+    assertEquals(0, empty.getNumberOfBlocks(), "getNumberOfBlocks");
+    assertEquals(LzoIndex.NOT_FOUND, empty.findNextPosition(0), "findNextPosition");
+    assertEquals(LzoIndex.NOT_FOUND, empty.alignSliceStartToIndex(1, 20), "alignSliceStartToIndex");
+    assertEquals(20, empty.alignSliceEndToIndex(5, 20), "alignSliceEndToIndex");
+  }
+
+  private static void assertEquals(long expected, long actual, String label) {
+    if (expected != actual) {
+      throw new AssertionError(label + " expected " + expected + " but got " + actual);
+    }
+  }
+}
+""".lstrip(),
+            encoding="utf-8",
+        )
+        hadoop_jar = ROOT / "lib/hadoop-core-0.20.2-cdh3u1.jar"
+        lzo_index = ROOT / "src/java/com/hadoop/compression/lzo/LzoIndex.java"
+        classpath = str(hadoop_jar)
+
+        compile_result = subprocess.run(
+            [
+                "javac",
+                "-cp",
+                classpath,
+                "-d",
+                str(class_dir),
+                str(decompressor_stub),
+                str(lzo_index),
+                str(harness),
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            compile_result.returncode == 0,
+            "LzoIndex smoke check must compile: " + compile_result.stderr.strip(),
+            failures,
+        )
+        if compile_result.returncode != 0:
+            return
+
+        run_result = subprocess.run(
+            ["java", "-cp", f"{class_dir}:{hadoop_jar}", "LzoIndexEmptyHarness"],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            run_result.returncode == 0,
+            "LzoIndex empty alignment must return safe boundaries: "
+            + (run_result.stderr or run_result.stdout).strip(),
+            failures,
+        )
+
+
 def main():
     failures = []
     required_files = [
@@ -142,6 +249,7 @@ def main():
         "docs/plans/2026-06-08-legacy-build-baseline.md",
         "docs/plans/2026-06-08-native-packaging-guard.md",
         "docs/plans/2026-06-08-build-revision-helper-guard.md",
+        "docs/plans/2026-06-09-lzo-index-empty-boundary.md",
     ]
 
     for relative_path in required_files:
@@ -157,6 +265,7 @@ def main():
     changes = read("CHANGES.md")
     gitignore = read(".gitignore")
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
+    empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     native_plan = read("docs/plans/2026-06-08-native-packaging-guard.md")
     revision_plan = read("docs/plans/2026-06-08-build-revision-helper-guard.md")
 
@@ -222,6 +331,7 @@ def main():
             "get_build_revision.sh must quote overrides and script-relative archive fallback paths",
             failures)
     verify_build_revision_script(failures)
+    verify_lzo_index_empty_alignment(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
             ".gitignore must exclude generated build products and local machine files",
@@ -235,7 +345,7 @@ def main():
     require("Maven Central" in security and "HTTPS" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
-    require("HTTPS" in changes and "make check" in changes and "build revision" in changes,
+    require("HTTPS" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes,
             "CHANGES must record the legacy build baseline",
             failures)
     require("status: completed" in plan,
@@ -246,6 +356,9 @@ def main():
             failures)
     require("status: completed" in revision_plan,
             "build revision helper plan must be marked completed",
+            failures)
+    require("status: completed" in empty_index_plan,
+            "empty-index boundary plan must be marked completed",
             failures)
 
     if failures:

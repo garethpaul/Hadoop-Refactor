@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-06-09
+
+- Hardened `LzoIndex` empty-index boundary helpers so direct callers receive
+  `NOT_FOUND` or file-size alignment instead of a null-pointer failure.
+
 ## 2026-06-08
 
 - Switched checked-in Ivy and Maven Ant task download endpoints from HTTP to HTTPS.

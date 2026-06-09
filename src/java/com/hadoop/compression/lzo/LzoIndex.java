@@ -71,6 +71,9 @@ public class LzoIndex {
    * Get the total number of blocks in the index file.
    */
   public int getNumberOfBlocks() {
+    if (isEmpty()) {
+      return 0;
+    }
     return blockPositions_.length;
   }
 
@@ -92,6 +95,10 @@ public class LzoIndex {
    * @return Either the start position of the block or -1 if it couldn't be found.
    */
   public long findNextPosition(long pos) {
+    if (isEmpty()) {
+      return NOT_FOUND;
+    }
+
     int block = Arrays.binarySearch(blockPositions_, pos);
 
     if (block >= 0) {
@@ -278,4 +285,3 @@ public class LzoIndex {
     }
   }
 }
-

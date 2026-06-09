@@ -83,6 +83,11 @@ public class TestLzoTextInputFormat extends TestCase {
   public void testLzoIndex() {
     LzoIndex index = new LzoIndex();
     assertTrue(index.isEmpty());
+    assertEquals(0, index.getNumberOfBlocks());
+    assertEquals(LzoIndex.NOT_FOUND, index.findNextPosition(0));
+    assertEquals(LzoIndex.NOT_FOUND, index.alignSliceStartToIndex(1, 20));
+    assertEquals(20, index.alignSliceEndToIndex(5, 20));
+
     index = new LzoIndex(4);
     index.set(0, 0);
     index.set(1, 5);
