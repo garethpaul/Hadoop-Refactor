@@ -226,6 +226,15 @@ public class LzoIndex {
     return index;
   }
 
+  static void commitIndexFile(FileSystem fs, Path tmpOutputFile,
+      Path outputFile) throws IOException {
+    if (!fs.rename(tmpOutputFile, outputFile)) {
+      fs.delete(tmpOutputFile, false);
+      throw new IOException("Failed to move temporary LZO index " +
+        tmpOutputFile + " to " + outputFile);
+    }
+  }
+
   /**
    * Index an lzo file to allow the input format to split them into separate map
    * jobs.
@@ -304,7 +313,7 @@ public class LzoIndex {
         fs.delete(tmpOutputFile, false);
       } else {
         // Otherwise, rename filename.lzo.index.tmp to filename.lzo.index.
-        fs.rename(tmpOutputFile, outputFile);
+        commitIndexFile(fs, tmpOutputFile, outputFile);
       }
     }
   }

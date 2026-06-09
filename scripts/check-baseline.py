@@ -15,6 +15,7 @@ INDEX_BYTE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-byte-count-guard.md"
 INDEX_OPEN_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-open-failure-guard.md"
 BLOCK_SIZE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-block-size-boundary.md"
 MAKE_GATES_PLAN = ROOT / "docs/plans/2026-06-09-make-gate-aliases.md"
+INDEX_RENAME_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md"
 
 
 def require(condition, message, failures):
@@ -271,6 +272,7 @@ public class LzoIndexEmptyHarness {
     assertOversizedIndexBlockSizesRejected();
     assertMissingIndexReturnsEmpty();
     assertOpenFailurePropagates();
+    assertRenameFailurePropagates();
   }
 
   private static void assertEquals(long expected, long actual, String label) {
@@ -327,6 +329,39 @@ public class LzoIndexEmptyHarness {
       if (expected.getMessage().indexOf("permission denied") < 0) {
         throw new AssertionError("Unexpected open failure: " + expected.getMessage());
       }
+    }
+  }
+
+  private static void assertRenameFailurePropagates() throws Exception {
+    RenameFailureFileSystem fs = new RenameFailureFileSystem();
+    Path tmpIndex = new Path("/data/example.lzo.index.tmp");
+    try {
+      LzoIndex.commitIndexFile(fs, tmpIndex, new Path("/data/example.lzo.index"));
+      throw new AssertionError("Temporary index rename failure was swallowed");
+    } catch (IOException expected) {
+      if (expected.getMessage().indexOf("Failed to move temporary LZO index") < 0) {
+        throw new AssertionError("Unexpected rename failure: " + expected.getMessage());
+      }
+    }
+    if (!fs.deletedTempIndex) {
+      throw new AssertionError("Temporary index file was not deleted after rename failure");
+    }
+  }
+
+  private static class RenameFailureFileSystem extends ThrowingFileSystem {
+    boolean deletedTempIndex = false;
+
+    RenameFailureFileSystem() {
+      super(new FileNotFoundException("not used"));
+    }
+
+    public boolean rename(Path src, Path dst) throws IOException {
+      return false;
+    }
+
+    public boolean delete(Path f, boolean recursive) throws IOException {
+      deletedTempIndex = f.toString().endsWith(".index.tmp");
+      return true;
     }
   }
 
@@ -466,6 +501,7 @@ def main():
         "docs/plans/2026-06-09-lzo-index-open-failure-guard.md",
         "docs/plans/2026-06-09-lzo-block-size-boundary.md",
         "docs/plans/2026-06-09-make-gate-aliases.md",
+        "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md",
     ]
 
     for relative_path in required_files:
@@ -489,6 +525,7 @@ def main():
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
     index_open_plan = INDEX_OPEN_PLAN.read_text(encoding="utf-8") if INDEX_OPEN_PLAN.exists() else ""
     block_size_plan = BLOCK_SIZE_PLAN.read_text(encoding="utf-8") if BLOCK_SIZE_PLAN.exists() else ""
+    index_rename_plan = INDEX_RENAME_PLAN.read_text(encoding="utf-8") if INDEX_RENAME_PLAN.exists() else ""
     native_plan = read("docs/plans/2026-06-08-native-packaging-guard.md")
     revision_plan = read("docs/plans/2026-06-08-build-revision-helper-guard.md")
 
@@ -581,6 +618,12 @@ def main():
     require("assertMissingIndexReturnsEmpty" in Path(__file__).read_text(encoding="utf-8") and "assertOpenFailurePropagates" in Path(__file__).read_text(encoding="utf-8"),
             "LzoIndex smoke check must cover missing-index fallback and non-missing open failures",
             failures)
+    require("static void commitIndexFile" in lzo_index_source and "if (!fs.rename(tmpOutputFile, outputFile))" in lzo_index_source and "Failed to move temporary LZO index" in lzo_index_source,
+            "LzoIndex.createIndex must surface temporary-index rename failures",
+            failures)
+    require("assertRenameFailurePropagates" in Path(__file__).read_text(encoding="utf-8"),
+            "LzoIndex smoke check must cover temporary-index rename failures",
+            failures)
     verify_lzo_index_empty_alignment(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
@@ -598,13 +641,16 @@ def main():
     require("index open failures" in readme,
             "README must document the LZO index open-failure guard",
             failures)
-    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision,
+    require("index rename failures" in readme,
+            "README must document the LZO index rename-failure guard",
+            failures)
+    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision and "index rename failures" in vision,
             "VISION must describe the current static build baseline",
             failures)
     require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
-    require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes,
+    require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes and "index rename failures" in changes,
             "CHANGES must record the legacy build baseline",
             failures)
     require("status: completed" in plan,
@@ -627,6 +673,9 @@ def main():
             failures)
     require("status: completed" in block_size_plan,
             "block-size boundary plan must be marked completed",
+            failures)
+    require("status: completed" in index_rename_plan,
+            "index rename-failure plan must be marked completed",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,

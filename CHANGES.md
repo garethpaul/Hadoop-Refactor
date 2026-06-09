@@ -12,6 +12,8 @@
   stream decompression continue across a corrupt file.
 - Preserved missing-index fallback while surfacing non-missing `LzoIndex`
   index open failures.
+- Surfaced LZO index rename failures so failed temporary index publication is
+  cleaned up instead of reported as success.
 
 ## 2026-06-08
 

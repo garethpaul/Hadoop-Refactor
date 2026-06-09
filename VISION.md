@@ -55,8 +55,8 @@ Current baseline: `make lint`, `make test`, `make build`, and `make check` run
 `scripts/check-baseline.py`, which validates legacy Ant/Ivy metadata, native
 shell script syntax, source/test inventory, build revision helper fallback
 behavior, `LzoIndex` empty-index handling, malformed index byte counts,
-oversized LZO block sizes, index open failures, and HTTPS download endpoints
-without requiring Ant on the local host.
+oversized LZO block sizes, index open failures, index rename failures, and
+HTTPS download endpoints without requiring Ant on the local host.
 
 ## What We Will Not Merge (For Now)
 
