@@ -58,10 +58,18 @@ The checked-in Ant build targets Java 6 bytecode and uses legacy Hadoop 0.20/CDH
 Run the local static baseline:
 
 ```bash
+make lint
+make test
+make build
 make check
 ```
 
-The baseline runs `scripts/check-baseline.py`, validates Ant/Ivy XML, checks shell syntax for native packaging scripts, verifies the Java/native/test source inventory, and confirms the checked-in Maven/Ivy download endpoints use HTTPS. It does not require Ant.
+The `lint`, `test`, and `build` targets currently delegate to the static
+baseline so every local gate entry point runs the same checks. The baseline runs
+`scripts/check-baseline.py`, validates Ant/Ivy XML, checks shell syntax for
+native packaging scripts, verifies the Java/native/test source inventory, and
+confirms the checked-in Maven/Ivy download endpoints use HTTPS. It does not
+require Ant.
 It also exercises `src/native/packageNativeHadoop.sh` with temporary native
 library fixtures and `src/get_build_revision.sh` with archive-export fixtures
 so quoted path handling stays covered. The Java smoke harness also checks
@@ -96,12 +104,16 @@ When the required SDK or runtime is unavailable, use static checks and source re
 
 - See `SECURITY.md` for vulnerability reporting and safe research guidance.
 - See `VISION.md` for project direction and contribution guardrails.
-- Run `make check` before pushing changes to build metadata, native scripts, Java source, tests, or dependency download configuration.
+- Run `make lint`, `make test`, `make build`, and `make check` before pushing
+  changes to build metadata, native scripts, Java source, tests, or dependency
+  download configuration.
 - See `docs/plans/2026-06-08-native-packaging-guard.md` for the current native packaging guardrail.
 - See `docs/plans/2026-06-08-build-revision-helper-guard.md` for the current build revision helper guardrail.
 - See `docs/plans/2026-06-09-lzo-index-open-failure-guard.md` for the LZO index open failures guardrail.
 - See `docs/plans/2026-06-09-lzo-block-size-boundary.md` for the oversized
   LZO block-size guardrail.
+- See `docs/plans/2026-06-09-make-gate-aliases.md` for local verification
+  target guardrails.
 
 ## Contributing
 

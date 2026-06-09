@@ -14,6 +14,7 @@ EMPTY_INDEX_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-empty-boundary.md"
 INDEX_BYTE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-byte-count-guard.md"
 INDEX_OPEN_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-open-failure-guard.md"
 BLOCK_SIZE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-block-size-boundary.md"
+MAKE_GATES_PLAN = ROOT / "docs/plans/2026-06-09-make-gate-aliases.md"
 
 
 def require(condition, message, failures):
@@ -464,6 +465,7 @@ def main():
         "docs/plans/2026-06-09-lzo-index-byte-count-guard.md",
         "docs/plans/2026-06-09-lzo-index-open-failure-guard.md",
         "docs/plans/2026-06-09-lzo-block-size-boundary.md",
+        "docs/plans/2026-06-09-make-gate-aliases.md",
     ]
 
     for relative_path in required_files:
@@ -474,6 +476,7 @@ def main():
     lzo_index_source = read("src/java/com/hadoop/compression/lzo/LzoIndex.java")
     lzop_input_source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
     split_record_reader_source = read("src/java/com/hadoop/mapreduce/LzoSplitRecordReader.java")
+    makefile = read("Makefile")
     package_script = read("src/native/packageNativeHadoop.sh")
     build_revision_script = read("src/get_build_revision.sh")
     readme = read("README.md")
@@ -518,6 +521,9 @@ def main():
             failures)
     require('target name="test"' in build_xml and '<junit ' in build_xml,
             "build.xml must keep the Ant JUnit test target",
+            failures)
+    require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
+            "Makefile must expose lint, test, build, and check gate targets",
             failures)
 
     java_sources = sorted((ROOT / "src/java").rglob("*.java"))
@@ -580,7 +586,7 @@ def main():
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
             ".gitignore must exclude generated build products and local machine files",
             failures)
-    require("make check" in readme and "scripts/check-baseline.py" in readme and "Ant" in readme and "Java 8" in readme and "build revision" in readme,
+    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "scripts/check-baseline.py" in readme and "Ant" in readme and "Java 8" in readme and "build revision" in readme,
             "README must document static verification and legacy build prerequisites",
             failures)
     require("malformed index byte counts" in readme,
@@ -592,13 +598,13 @@ def main():
     require("index open failures" in readme,
             "README must document the LZO index open-failure guard",
             failures)
-    require("scripts/check-baseline.py" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision,
+    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision,
             "VISION must describe the current static build baseline",
             failures)
     require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
-    require("HTTPS" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes,
+    require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes,
             "CHANGES must record the legacy build baseline",
             failures)
     require("status: completed" in plan,
@@ -621,6 +627,10 @@ def main():
             failures)
     require("status: completed" in block_size_plan,
             "block-size boundary plan must be marked completed",
+            failures)
+    make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
+    require("status: completed" in make_gates_plan,
+            "Make gate alias plan must be marked completed",
             failures)
 
     if failures:

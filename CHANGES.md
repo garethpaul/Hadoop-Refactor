@@ -2,6 +2,8 @@
 
 ## 2026-06-09
 
+- Added `make lint`, `make test`, and `make build` aliases so local verification
+  has the expected pre-push gate targets in addition to `make check`.
 - Hardened `LzoIndex` empty-index boundary helpers so direct callers receive
   `NOT_FOUND` or file-size alignment instead of a null-pointer failure.
 - Rejected malformed index byte counts that are not aligned to 8-byte block
