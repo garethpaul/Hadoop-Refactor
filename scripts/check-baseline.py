@@ -18,6 +18,7 @@ MAKE_GATES_PLAN = ROOT / "docs/plans/2026-06-09-make-gate-aliases.md"
 INDEX_RENAME_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md"
 INDEX_POSITION_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-position-order-guard.md"
 CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
+RECORD_WRITER_RENAME_PLAN = ROOT / "docs/plans/2026-06-10-distributed-index-rename-guard.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -453,6 +454,7 @@ public class LzoIndexEmptyHarness {
         )
         hadoop_jar = ROOT / "lib/hadoop-core-0.20.2-cdh3u1.jar"
         lzo_index = ROOT / "src/java/com/hadoop/compression/lzo/LzoIndex.java"
+        lzo_index_record_writer = ROOT / "src/java/com/hadoop/mapreduce/LzoIndexRecordWriter.java"
         classpath = str(hadoop_jar)
 
         compile_result = subprocess.run(
@@ -467,6 +469,7 @@ public class LzoIndexEmptyHarness {
                 str(codec_stub),
                 str(decompressor_stub),
                 str(lzo_index),
+                str(lzo_index_record_writer),
                 str(harness),
             ],
             cwd=str(ROOT),
@@ -530,6 +533,7 @@ def main():
         "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md",
         "docs/plans/2026-06-09-lzo-index-position-order-guard.md",
         "docs/plans/2026-06-10-ci-baseline.md",
+        "docs/plans/2026-06-10-distributed-index-rename-guard.md",
     ]
 
     for relative_path in required_files:
@@ -540,6 +544,7 @@ def main():
     lzo_index_source = read("src/java/com/hadoop/compression/lzo/LzoIndex.java")
     lzop_input_source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
     split_record_reader_source = read("src/java/com/hadoop/mapreduce/LzoSplitRecordReader.java")
+    index_record_writer_source = read("src/java/com/hadoop/mapreduce/LzoIndexRecordWriter.java")
     makefile = read("Makefile")
     package_script = read("src/native/packageNativeHadoop.sh")
     build_revision_script = read("src/get_build_revision.sh")
@@ -550,6 +555,7 @@ def main():
     gitignore = read(".gitignore")
     ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8") if CI_WORKFLOW.exists() else ""
     ci_plan = CI_PLAN.read_text(encoding="utf-8") if CI_PLAN.exists() else ""
+    record_writer_rename_plan = RECORD_WRITER_RENAME_PLAN.read_text(encoding="utf-8") if RECORD_WRITER_RENAME_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -661,6 +667,12 @@ def main():
     require("static void commitIndexFile" in lzo_index_source and "if (!fs.rename(tmpOutputFile, outputFile))" in lzo_index_source and "Failed to move temporary LZO index" in lzo_index_source,
             "LzoIndex.createIndex must surface temporary-index rename failures",
             failures)
+    require("public static void commitIndexFile" in lzo_index_source,
+            "LzoIndex commit helper must be available to distributed index writers",
+            failures)
+    require("LzoIndex.commitIndexFile(fs, tmpIndexPath, realIndexPath);" in index_record_writer_source,
+            "LzoIndexRecordWriter must surface temporary-index rename failures",
+            failures)
     require("assertRenameFailurePropagates" in Path(__file__).read_text(encoding="utf-8"),
             "LzoIndex smoke check must cover temporary-index rename failures",
             failures)
@@ -737,6 +749,9 @@ def main():
             failures)
     require("status: completed" in ci_plan.lower() and "make check" in ci_plan,
             "CI baseline plan must be marked completed and record make check verification",
+            failures)
+    require("status: completed" in record_writer_rename_plan.lower() and "make check" in record_writer_rename_plan,
+            "distributed index rename plan must be marked completed and record verification",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,

@@ -36,6 +36,8 @@ Helpful reports include:
   malformed index positions, missing-index fallback behavior, open-failure
   propagation, and oversized block sizes covered before changing index or
   stream parsing code.
+- Treat failed temporary-index renames as failed indexing operations in both
+  direct and distributed jobs; never report success without a published index.
 - GitHub Actions uses read-only permissions and pinned Python/Java setup actions
   to run `make check`, keeping metadata, shell, native-packaging, and LZO
   harness checks enforced before merge.
