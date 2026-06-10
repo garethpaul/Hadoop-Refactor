@@ -81,6 +81,8 @@ rejected before indexers or split readers seek across the file. Missing index
 files fall back to unsplittable reads while non-missing index open failures
 still surface to callers. Temporary index rename failures are surfaced and
 cleaned up so failed index publication cannot look successful.
+GitHub Actions installs Python 3.12 and Temurin Java 8 with pinned actions,
+then runs the same deterministic `make check` baseline.
 
 For full legacy verification in a matching environment, run:
 
@@ -123,6 +125,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   LZO index rename failures.
 - See `docs/plans/2026-06-09-make-gate-aliases.md` for local verification
   target guardrails.
+- See `docs/plans/2026-06-10-ci-baseline.md` for the hosted GitHub Actions
+  baseline.
 
 ## Contributing
 

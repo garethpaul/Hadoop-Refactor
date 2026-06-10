@@ -17,6 +17,8 @@ BLOCK_SIZE_PLAN = ROOT / "docs/plans/2026-06-09-lzo-block-size-boundary.md"
 MAKE_GATES_PLAN = ROOT / "docs/plans/2026-06-09-make-gate-aliases.md"
 INDEX_RENAME_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md"
 INDEX_POSITION_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-position-order-guard.md"
+CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
+CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
 def require(condition, message, failures):
@@ -499,6 +501,7 @@ def main():
     failures = []
     required_files = [
         ".gitignore",
+        ".github/workflows/check.yml",
         "CHANGES.md",
         "COPYING",
         "Makefile",
@@ -526,6 +529,7 @@ def main():
         "docs/plans/2026-06-09-make-gate-aliases.md",
         "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md",
         "docs/plans/2026-06-09-lzo-index-position-order-guard.md",
+        "docs/plans/2026-06-10-ci-baseline.md",
     ]
 
     for relative_path in required_files:
@@ -544,6 +548,8 @@ def main():
     security = read("SECURITY.md")
     changes = read("CHANGES.md")
     gitignore = read(".gitignore")
+    ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8") if CI_WORKFLOW.exists() else ""
+    ci_plan = CI_PLAN.read_text(encoding="utf-8") if CI_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -586,6 +592,9 @@ def main():
             failures)
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, build, and check gate targets",
+            failures)
+    require("permissions:\n  contents: read" in ci_workflow and "cancel-in-progress: true" in ci_workflow and "runs-on: ubuntu-24.04" in ci_workflow and "timeout-minutes: 10" in ci_workflow and "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10" in ci_workflow and "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405" in ci_workflow and "python-version: \"3.12\"" in ci_workflow and "actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654" in ci_workflow and "java-version: \"8\"" in ci_workflow and "run: make check" in ci_workflow,
+            "GitHub Actions must keep the pinned Python 3.12 and Java 8 check contract",
             failures)
 
     java_sources = sorted((ROOT / "src/java").rglob("*.java"))
@@ -663,6 +672,9 @@ def main():
     require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "scripts/check-baseline.py" in readme and "Ant" in readme and "Java 8" in readme and "build revision" in readme,
             "README must document static verification and legacy build prerequisites",
             failures)
+    require("GitHub Actions" in readme and "docs/plans/2026-06-10-ci-baseline.md" in readme,
+            "README must document the hosted CI baseline",
+            failures)
     require("malformed index byte counts" in readme,
             "README must document the malformed LZO index byte-count guard",
             failures)
@@ -681,11 +693,20 @@ def main():
     require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "malformed index positions" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision and "index rename failures" in vision,
             "VISION must describe the current static build baseline",
             failures)
+    require("GitHub Actions" in vision,
+            "VISION must describe the hosted CI baseline",
+            failures)
     require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security and "malformed index positions" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
+    require("GitHub Actions" in security and "make check" in security,
+            "SECURITY must describe the hosted CI verification boundary",
+            failures)
     require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "malformed index positions" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes and "index rename failures" in changes,
             "CHANGES must record the legacy build baseline",
+            failures)
+    require("GitHub Actions" in changes,
+            "CHANGES must record the hosted CI baseline",
             failures)
     require("status: completed" in plan,
             "plan must be marked completed",
@@ -713,6 +734,9 @@ def main():
             failures)
     require("status: completed" in index_position_plan,
             "index position-order plan must be marked completed",
+            failures)
+    require("status: completed" in ci_plan.lower() and "make check" in ci_plan,
+            "CI baseline plan must be marked completed and record make check verification",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,

@@ -36,6 +36,9 @@ Helpful reports include:
   malformed index positions, missing-index fallback behavior, open-failure
   propagation, and oversized block sizes covered before changing index or
   stream parsing code.
+- GitHub Actions uses read-only permissions and pinned Python/Java setup actions
+  to run `make check`, keeping metadata, shell, native-packaging, and LZO
+  harness checks enforced before merge.
 
 ## Service and API Notes
 
