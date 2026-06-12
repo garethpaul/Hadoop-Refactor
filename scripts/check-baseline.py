@@ -822,8 +822,27 @@ def main():
     require("status: completed" in record_writer_rename_plan.lower() and "make check" in record_writer_rename_plan,
             "distributed index rename plan must be marked completed and record verification",
             failures)
-    require("status: completed" in input_traversal_plan.lower() and "make check" in input_traversal_plan,
-            "distributed input traversal plan must be marked completed and record verification",
+    input_traversal_statuses = re.findall(
+        r"^status: .+$", input_traversal_plan, flags=re.MULTILINE
+    )
+    input_traversal_sections = input_traversal_plan.split(
+        "## Verification Completed\n", 1
+    )
+    input_traversal_verification = (
+        input_traversal_sections[1] if len(input_traversal_sections) == 2 else ""
+    )
+    input_traversal_required_evidence = (
+        "All four Make gates",
+        "push run `27393718908`",
+        "pull-request run `27393721234`",
+        "push run `27393737055`",
+        "CodeQL setup run `27402321777`",
+        "mutation restoring the `walkPath` exception-swallowing block",
+    )
+    require(input_traversal_statuses == ["status: completed"]
+            and all(item in input_traversal_verification for item in input_traversal_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", input_traversal_verification, re.IGNORECASE) is None,
+            "distributed input traversal plan must record completed status and actual verification",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,
