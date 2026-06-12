@@ -82,6 +82,8 @@ files fall back to unsplittable reads while non-missing index open failures
 still surface to callers. Temporary index rename failures are surfaced and
 cleaned up so failed index publication cannot look successful. The same checked
 publication path is used by direct and distributed index generation.
+Distributed input traversal failures also propagate to the command instead of
+being logged and converted into an empty successful indexing run.
 GitHub Actions installs Python 3.12 and Temurin Java 8 with pinned actions,
 credential-free checkout, and read-only permissions, then runs the same
 deterministic `make check` baseline.
@@ -127,6 +129,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   LZO index rename failures.
 - See `docs/plans/2026-06-10-distributed-index-rename-guard.md` for the shared
   direct and distributed index publication guard.
+- See `docs/plans/2026-06-12-distributed-input-error-propagation.md` for the
+  distributed input traversal failures guard.
 - See `docs/plans/2026-06-09-make-gate-aliases.md` for local verification
   target guardrails.
 - See `docs/plans/2026-06-10-ci-baseline.md` for the hosted GitHub Actions

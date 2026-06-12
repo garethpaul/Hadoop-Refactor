@@ -38,6 +38,8 @@ Helpful reports include:
   stream parsing code.
 - Treat failed temporary-index renames as failed indexing operations in both
   direct and distributed jobs; never report success without a published index.
+- Propagate distributed input traversal failures so missing, inaccessible, or
+  unreadable paths cannot be silently omitted from a successful indexing run.
 - GitHub Actions uses read-only permissions and pinned Python/Java setup actions
   with credential-free checkout to run `make check`, keeping metadata, shell,
   native-packaging, and LZO harness checks enforced before merge.
