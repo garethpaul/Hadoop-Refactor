@@ -20,6 +20,7 @@ INDEX_RENAME_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-rename-failure-guard
 INDEX_POSITION_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-position-order-guard.md"
 CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
 RECORD_WRITER_RENAME_PLAN = ROOT / "docs/plans/2026-06-10-distributed-index-rename-guard.md"
+INPUT_TRAVERSAL_PLAN = ROOT / "docs/plans/2026-06-12-distributed-input-error-propagation.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -30,6 +31,23 @@ def require(condition, message, failures):
 
 def read(relative_path):
     return (ROOT / relative_path).read_text(encoding="utf-8", errors="replace")
+
+
+def extract_java_block(source, signature_pattern):
+    signature = re.search(signature_pattern, source, re.MULTILINE)
+    if signature is None:
+        return None
+
+    brace_start = source.find("{", signature.start())
+    depth = 0
+    for index in range(brace_start, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[signature.start():index + 1]
+    return None
 
 
 def run(command):
@@ -535,6 +553,7 @@ def main():
         "docs/plans/2026-06-09-lzo-index-position-order-guard.md",
         "docs/plans/2026-06-10-ci-baseline.md",
         "docs/plans/2026-06-10-distributed-index-rename-guard.md",
+        "docs/plans/2026-06-12-distributed-input-error-propagation.md",
     ]
 
     for relative_path in required_files:
@@ -546,6 +565,7 @@ def main():
     lzop_input_source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
     split_record_reader_source = read("src/java/com/hadoop/mapreduce/LzoSplitRecordReader.java")
     index_record_writer_source = read("src/java/com/hadoop/mapreduce/LzoIndexRecordWriter.java")
+    distributed_indexer_source = read("src/java/com/hadoop/compression/lzo/DistributedLzoIndexer.java")
     makefile = read("Makefile")
     package_script = read("src/native/packageNativeHadoop.sh")
     build_revision_script = read("src/get_build_revision.sh")
@@ -557,6 +577,7 @@ def main():
     ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8") if CI_WORKFLOW.exists() else ""
     ci_plan = CI_PLAN.read_text(encoding="utf-8") if CI_PLAN.exists() else ""
     record_writer_rename_plan = RECORD_WRITER_RENAME_PLAN.read_text(encoding="utf-8") if RECORD_WRITER_RENAME_PLAN.exists() else ""
+    input_traversal_plan = INPUT_TRAVERSAL_PLAN.read_text(encoding="utf-8") if INPUT_TRAVERSAL_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -701,6 +722,20 @@ def main():
     require("assertRenameFailurePropagates" in Path(__file__).read_text(encoding="utf-8"),
             "LzoIndex smoke check must cover temporary-index rename failures",
             failures)
+    walk_path_source = extract_java_block(
+        distributed_indexer_source,
+        r"private void walkPath\(Path path, PathFilter pathFilter, List<Path> accumulator\)\s*throws IOException\s*\{",
+    )
+    require(walk_path_source is not None,
+            "DistributedLzoIndexer.walkPath must propagate IOException",
+            failures)
+    require(walk_path_source is not None and "catch (IOException" not in walk_path_source,
+            "DistributedLzoIndexer.walkPath must not swallow filesystem traversal failures",
+            failures)
+    require("public int run(String[] args) throws Exception" in distributed_indexer_source and
+            "public static void main(String[] args) throws Exception" in distributed_indexer_source,
+            "DistributedLzoIndexer entry points must preserve traversal failure propagation",
+            failures)
     verify_lzo_index_empty_alignment(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
@@ -727,11 +762,17 @@ def main():
     require("index rename failures" in readme,
             "README must document the LZO index rename-failure guard",
             failures)
+    require("distributed input traversal failures" in readme,
+            "README must document distributed input traversal failure propagation",
+            failures)
     require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "malformed index positions" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision and "index rename failures" in vision,
             "VISION must describe the current static build baseline",
             failures)
     require("GitHub Actions" in vision,
             "VISION must describe the hosted CI baseline",
+            failures)
+    require("distributed input traversal failures" in vision,
+            "VISION must preserve distributed traversal failure propagation",
             failures)
     require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security and "malformed index positions" in security,
             "SECURITY must describe build dependency download expectations",
@@ -744,6 +785,9 @@ def main():
             failures)
     require("GitHub Actions" in changes,
             "CHANGES must record the hosted CI baseline",
+            failures)
+    require("distributed input traversal failures" in changes,
+            "CHANGES must record distributed traversal failure propagation",
             failures)
     require("status: completed" in plan,
             "plan must be marked completed",
@@ -777,6 +821,9 @@ def main():
             failures)
     require("status: completed" in record_writer_rename_plan.lower() and "make check" in record_writer_rename_plan,
             "distributed index rename plan must be marked completed and record verification",
+            failures)
+    require("status: completed" in input_traversal_plan.lower() and "make check" in input_traversal_plan,
+            "distributed input traversal plan must be marked completed and record verification",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,

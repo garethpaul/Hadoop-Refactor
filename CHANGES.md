@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-06-12
+
+- Propagated distributed input traversal failures so missing, inaccessible, or
+  unreadable paths cannot be omitted from a successful indexing command.
+
 ## 2026-06-10
 
 - Routed distributed index-writer publication through the checked LZO index
