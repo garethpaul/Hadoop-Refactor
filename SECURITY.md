@@ -39,8 +39,8 @@ Helpful reports include:
 - Treat failed temporary-index renames as failed indexing operations in both
   direct and distributed jobs; never report success without a published index.
 - GitHub Actions uses read-only permissions and pinned Python/Java setup actions
-  to run `make check`, keeping metadata, shell, native-packaging, and LZO
-  harness checks enforced before merge.
+  with credential-free checkout to run `make check`, keeping metadata, shell,
+  native-packaging, and LZO harness checks enforced before merge.
 
 ## Service and API Notes
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -599,7 +600,31 @@ def main():
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, build, and check gate targets",
             failures)
-    require("permissions:\n  contents: read" in ci_workflow and "cancel-in-progress: true" in ci_workflow and "runs-on: ubuntu-24.04" in ci_workflow and "timeout-minutes: 10" in ci_workflow and "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10" in ci_workflow and "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405" in ci_workflow and "python-version: \"3.12\"" in ci_workflow and "actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654" in ci_workflow and "java-version: \"8\"" in ci_workflow and "run: make check" in ci_workflow,
+    workflow_lines = ci_workflow.splitlines()
+    require(workflow_lines.count("permissions:") == 1 and
+            workflow_lines.count("  contents: read") == 1 and
+            not re.search(r"^[ \t]+permissions:", ci_workflow, re.MULTILINE) and
+            not re.search(r"^[ \t]+[^#][^:]*:[ \t]*write(?:[ \t]*#.*)?$", ci_workflow, re.MULTILINE) and
+            "write-all" not in ci_workflow,
+            "GitHub Actions must keep one top-level read-only permissions block",
+            failures)
+    require(ci_workflow.count("uses: actions/checkout@") == 1 and
+            "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3" in ci_workflow and
+            workflow_lines.count("          persist-credentials: false") == 1,
+            "GitHub Actions must keep one pinned, credential-free checkout step",
+            failures)
+    require(ci_workflow.count("uses: actions/setup-python@") == 1 and
+            "uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0" in ci_workflow and
+            workflow_lines.count('          python-version: "3.12"') == 1 and
+            ci_workflow.count("uses: actions/setup-java@") == 1 and
+            "uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0" in ci_workflow and
+            workflow_lines.count("          distribution: temurin") == 1 and
+            workflow_lines.count('          java-version: "8"') == 1 and
+            workflow_lines.count("      - run: make check") == 1 and
+            "cancel-in-progress: true" in ci_workflow and
+            "runs-on: ubuntu-24.04" in ci_workflow and
+            "timeout-minutes: 10" in ci_workflow and
+            "workflow_dispatch:" in ci_workflow,
             "GitHub Actions must keep the pinned Python 3.12 and Java 8 check contract",
             failures)
 

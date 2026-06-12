@@ -14,11 +14,14 @@ pushes and pull requests.
   Temurin Java 8 before running `make check`.
 - Pinned checkout, setup-python, and setup-java by commit; cancelled superseded
   runs and bounded execution with a timeout.
+- Disabled checkout credential persistence and retained read-only repository
+  permissions.
 - Extended the baseline checker and documentation so the hosted CI path stays
-  visible and covered by local verification.
+  visible, structurally enforced, and covered by local verification.
 
 ## Verification
 
 - `make check`
 - Workflow YAML parse
+- Hostile workflow mutation checks
 - Hosted Python 3.12 and Temurin Java 8 GitHub Actions run

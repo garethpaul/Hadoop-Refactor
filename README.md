@@ -83,7 +83,8 @@ still surface to callers. Temporary index rename failures are surfaced and
 cleaned up so failed index publication cannot look successful. The same checked
 publication path is used by direct and distributed index generation.
 GitHub Actions installs Python 3.12 and Temurin Java 8 with pinned actions,
-then runs the same deterministic `make check` baseline.
+credential-free checkout, and read-only permissions, then runs the same
+deterministic `make check` baseline.
 
 For full legacy verification in a matching environment, run:
 

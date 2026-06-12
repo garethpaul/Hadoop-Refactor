@@ -61,7 +61,8 @@ malformed index positions, oversized LZO block sizes, index open failures,
 direct and distributed index rename failures, and HTTPS download endpoints
 without requiring Ant on the local host.
 GitHub Actions installs Python 3.12 and Temurin Java 8 with pinned actions,
-then runs `make check` for pushes and pull requests.
+credential-free checkout, and read-only permissions, then runs `make check`
+for pushes and pull requests.
 
 ## What We Will Not Merge (For Now)
 

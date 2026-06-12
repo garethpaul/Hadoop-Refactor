@@ -5,7 +5,8 @@
 - Routed distributed index-writer publication through the checked LZO index
   commit helper so failed filesystem renames cannot be reported as success.
 - Added a pinned, least-privilege GitHub Actions workflow that installs Python
-  3.12 and Temurin Java 8 before running `make check`.
+  3.12 and Temurin Java 8 before running `make check`, with credential-free
+  checkout.
 - Extended the baseline checker and docs to require the hosted CI verification
   path.
 
