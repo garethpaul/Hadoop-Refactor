@@ -1,5 +1,12 @@
 # Changes
 
+## 2026-06-10
+
+- Added a GitHub Actions workflow that installs Python 3.12 and Java 8 before
+  running `make check`.
+- Extended the baseline checker and docs to require the hosted CI verification
+  path.
+
 ## 2026-06-09
 
 - Added `make lint`, `make test`, and `make build` aliases so local verification

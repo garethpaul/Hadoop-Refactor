@@ -36,6 +36,9 @@ Helpful reports include:
   malformed index positions, missing-index fallback behavior, open-failure
   propagation, and oversized block sizes covered before changing index or
   stream parsing code.
+- GitHub Actions runs `make check` with Python and Java for pushes and pull
+  requests so the static metadata, shell, and LZO smoke guardrails stay
+  enforced before merge.
 
 ## Service and API Notes
 

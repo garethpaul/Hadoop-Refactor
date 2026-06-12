@@ -24,6 +24,8 @@ Priority:
 - Keep `scripts/check-baseline.py`, `make lint`, `make test`, `make build`,
   and `make check` passing for XML, shell, source inventory, native packaging,
   build revision stamping, and HTTPS build-download guardrails
+- Keep GitHub Actions aligned with the Python and Java requirements of the
+  local `make check` baseline
 - Avoid broad Hadoop upgrades without compatibility planning
 
 Next priorities:
@@ -58,6 +60,8 @@ behavior, `LzoIndex` empty-index handling, malformed index byte counts,
 malformed index positions, oversized LZO block sizes, index open failures,
 index rename failures, and HTTPS download endpoints without requiring Ant on
 the local host.
+GitHub Actions installs Python 3.12 and Java 8, then runs `make check` for
+pushes and pull requests.
 
 ## What We Will Not Merge (For Now)
 
