@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,7 @@ MAKE_GATES_PLAN = ROOT / "docs/plans/2026-06-09-make-gate-aliases.md"
 INDEX_RENAME_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md"
 INDEX_POSITION_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-position-order-guard.md"
 CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
+RECORD_WRITER_RENAME_PLAN = ROOT / "docs/plans/2026-06-10-distributed-index-rename-guard.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -453,6 +455,7 @@ public class LzoIndexEmptyHarness {
         )
         hadoop_jar = ROOT / "lib/hadoop-core-0.20.2-cdh3u1.jar"
         lzo_index = ROOT / "src/java/com/hadoop/compression/lzo/LzoIndex.java"
+        lzo_index_record_writer = ROOT / "src/java/com/hadoop/mapreduce/LzoIndexRecordWriter.java"
         classpath = str(hadoop_jar)
 
         compile_result = subprocess.run(
@@ -467,6 +470,7 @@ public class LzoIndexEmptyHarness {
                 str(codec_stub),
                 str(decompressor_stub),
                 str(lzo_index),
+                str(lzo_index_record_writer),
                 str(harness),
             ],
             cwd=str(ROOT),
@@ -530,6 +534,7 @@ def main():
         "docs/plans/2026-06-09-lzo-index-rename-failure-guard.md",
         "docs/plans/2026-06-09-lzo-index-position-order-guard.md",
         "docs/plans/2026-06-10-ci-baseline.md",
+        "docs/plans/2026-06-10-distributed-index-rename-guard.md",
     ]
 
     for relative_path in required_files:
@@ -540,6 +545,7 @@ def main():
     lzo_index_source = read("src/java/com/hadoop/compression/lzo/LzoIndex.java")
     lzop_input_source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
     split_record_reader_source = read("src/java/com/hadoop/mapreduce/LzoSplitRecordReader.java")
+    index_record_writer_source = read("src/java/com/hadoop/mapreduce/LzoIndexRecordWriter.java")
     makefile = read("Makefile")
     package_script = read("src/native/packageNativeHadoop.sh")
     build_revision_script = read("src/get_build_revision.sh")
@@ -550,6 +556,7 @@ def main():
     gitignore = read(".gitignore")
     ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8") if CI_WORKFLOW.exists() else ""
     ci_plan = CI_PLAN.read_text(encoding="utf-8") if CI_PLAN.exists() else ""
+    record_writer_rename_plan = RECORD_WRITER_RENAME_PLAN.read_text(encoding="utf-8") if RECORD_WRITER_RENAME_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -593,8 +600,32 @@ def main():
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, build, and check gate targets",
             failures)
-    require("actions/checkout@v4" in ci_workflow and "actions/setup-python@v5" in ci_workflow and "python-version: \"3.12\"" in ci_workflow and "actions/setup-java@v4" in ci_workflow and "java-version: \"8\"" in ci_workflow and "run: make check" in ci_workflow,
-            "GitHub Actions workflow must install Python 3.12 and Java 8 before running make check",
+    workflow_lines = ci_workflow.splitlines()
+    require(workflow_lines.count("permissions:") == 1 and
+            workflow_lines.count("  contents: read") == 1 and
+            not re.search(r"^[ \t]+permissions:", ci_workflow, re.MULTILINE) and
+            not re.search(r"^[ \t]+[^#][^:]*:[ \t]*write(?:[ \t]*#.*)?$", ci_workflow, re.MULTILINE) and
+            "write-all" not in ci_workflow,
+            "GitHub Actions must keep one top-level read-only permissions block",
+            failures)
+    require(ci_workflow.count("uses: actions/checkout@") == 1 and
+            "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3" in ci_workflow and
+            workflow_lines.count("          persist-credentials: false") == 1,
+            "GitHub Actions must keep one pinned, credential-free checkout step",
+            failures)
+    require(ci_workflow.count("uses: actions/setup-python@") == 1 and
+            "uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0" in ci_workflow and
+            workflow_lines.count('          python-version: "3.12"') == 1 and
+            ci_workflow.count("uses: actions/setup-java@") == 1 and
+            "uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0" in ci_workflow and
+            workflow_lines.count("          distribution: temurin") == 1 and
+            workflow_lines.count('          java-version: "8"') == 1 and
+            workflow_lines.count("      - run: make check") == 1 and
+            "cancel-in-progress: true" in ci_workflow and
+            "runs-on: ubuntu-24.04" in ci_workflow and
+            "timeout-minutes: 10" in ci_workflow and
+            "workflow_dispatch:" in ci_workflow,
+            "GitHub Actions must keep the pinned Python 3.12 and Java 8 check contract",
             failures)
 
     java_sources = sorted((ROOT / "src/java").rglob("*.java"))
@@ -660,6 +691,12 @@ def main():
             failures)
     require("static void commitIndexFile" in lzo_index_source and "if (!fs.rename(tmpOutputFile, outputFile))" in lzo_index_source and "Failed to move temporary LZO index" in lzo_index_source,
             "LzoIndex.createIndex must surface temporary-index rename failures",
+            failures)
+    require("public static void commitIndexFile" in lzo_index_source,
+            "LzoIndex commit helper must be available to distributed index writers",
+            failures)
+    require("LzoIndex.commitIndexFile(fs, tmpIndexPath, realIndexPath);" in index_record_writer_source,
+            "LzoIndexRecordWriter must surface temporary-index rename failures",
             failures)
     require("assertRenameFailurePropagates" in Path(__file__).read_text(encoding="utf-8"),
             "LzoIndex smoke check must cover temporary-index rename failures",
@@ -737,6 +774,9 @@ def main():
             failures)
     require("status: completed" in ci_plan.lower() and "make check" in ci_plan,
             "CI baseline plan must be marked completed and record make check verification",
+            failures)
+    require("status: completed" in record_writer_rename_plan.lower() and "make check" in record_writer_rename_plan,
+            "distributed index rename plan must be marked completed and record verification",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,

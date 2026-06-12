@@ -80,9 +80,11 @@ uses them. It also checks oversized LZO block sizes so corrupt streams are
 rejected before indexers or split readers seek across the file. Missing index
 files fall back to unsplittable reads while non-missing index open failures
 still surface to callers. Temporary index rename failures are surfaced and
-cleaned up so failed index publication cannot look successful.
-GitHub Actions installs Python 3.12 and Java 8 before running this same
-`make check` baseline for pushes and pull requests.
+cleaned up so failed index publication cannot look successful. The same checked
+publication path is used by direct and distributed index generation.
+GitHub Actions installs Python 3.12 and Temurin Java 8 with pinned actions,
+credential-free checkout, and read-only permissions, then runs the same
+deterministic `make check` baseline.
 
 For full legacy verification in a matching environment, run:
 
@@ -123,6 +125,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   LZO block-size guardrail.
 - See `docs/plans/2026-06-09-lzo-index-rename-failure-guard.md` for temporary
   LZO index rename failures.
+- See `docs/plans/2026-06-10-distributed-index-rename-guard.md` for the shared
+  direct and distributed index publication guard.
 - See `docs/plans/2026-06-09-make-gate-aliases.md` for local verification
   target guardrails.
 - See `docs/plans/2026-06-10-ci-baseline.md` for the hosted GitHub Actions

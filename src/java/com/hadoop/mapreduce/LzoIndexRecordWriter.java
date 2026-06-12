@@ -44,8 +44,7 @@ public class LzoIndexRecordWriter extends RecordWriter<Path, LongWritable> {
       outputStream.close();
 
       LOG.info("In close, now renaming " + tmpIndexPath + " to final location " + realIndexPath);
-      // Rename, indexing completed.
-      fs.rename(tmpIndexPath, realIndexPath);
+      LzoIndex.commitIndexFile(fs, tmpIndexPath, realIndexPath);
     }
   }
 

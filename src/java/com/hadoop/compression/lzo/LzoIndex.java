@@ -242,7 +242,10 @@ public class LzoIndex {
     return index;
   }
 
-  static void commitIndexFile(FileSystem fs, Path tmpOutputFile,
+  /**
+   * Publish a completed temporary index, cleaning it up if the rename fails.
+   */
+  public static void commitIndexFile(FileSystem fs, Path tmpOutputFile,
       Path outputFile) throws IOException {
     if (!fs.rename(tmpOutputFile, outputFile)) {
       fs.delete(tmpOutputFile, false);

@@ -36,9 +36,11 @@ Helpful reports include:
   malformed index positions, missing-index fallback behavior, open-failure
   propagation, and oversized block sizes covered before changing index or
   stream parsing code.
-- GitHub Actions runs `make check` with Python and Java for pushes and pull
-  requests so the static metadata, shell, and LZO smoke guardrails stay
-  enforced before merge.
+- Treat failed temporary-index renames as failed indexing operations in both
+  direct and distributed jobs; never report success without a published index.
+- GitHub Actions uses read-only permissions and pinned Python/Java setup actions
+  with credential-free checkout to run `make check`, keeping metadata, shell,
+  native-packaging, and LZO harness checks enforced before merge.
 
 ## Service and API Notes
 
