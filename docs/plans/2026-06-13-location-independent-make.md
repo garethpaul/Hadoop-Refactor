@@ -1,6 +1,6 @@
 # Location-Independent Hadoop Verification
 
-status: planned
+status: completed
 
 ## Context
 
@@ -39,8 +39,21 @@ caller-relative recipe; no runtime state or data migration exists.
 
 ## Work Completed
 
-Pending implementation.
+- Derived `ROOT` from the loaded Makefile and invoked the maintained Python
+  checker through its absolute repository path.
+- Added baseline contracts for rooted invocation, completed plan evidence, and
+  synchronized README/changelog guidance.
+- Preserved all Java, native, Ant/Ivy, dependency, and workflow files.
 
 ## Verification Completed
 
-Pending implementation and validation. Run `make check` before completion.
+- Root and external-directory Make gates passed for `lint`, `test`, `build`,
+  and `check`; every target exercised the complete legacy baseline.
+- The root-derivation mutation failed.
+- The checker-invocation mutation failed.
+- The plan-status mutation failed.
+- The plan-evidence mutation failed.
+- The documentation mutation failed.
+- Python compilation, maintained shell syntax, Ant/Ivy XML parsing, diff
+  hygiene, exact intended-path review, secret scanning, and generated-artifact
+  inspection passed.

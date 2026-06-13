@@ -24,6 +24,7 @@ INPUT_TRAVERSAL_PLAN = ROOT / "docs/plans/2026-06-12-distributed-input-error-pro
 COMPRESSED_LENGTH_PLAN = ROOT / "docs/plans/2026-06-13-lzo-compressed-length-consistency.md"
 EXTRA_HEADER_LENGTH_PLAN = ROOT / "docs/plans/2026-06-13-lzop-extra-header-length-boundary.md"
 ZERO_PROGRESS_READ_PLAN = ROOT / "docs/plans/2026-06-13-lzop-zero-progress-read.md"
+LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independent-make.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -818,6 +819,7 @@ def main():
         "docs/plans/2026-06-13-lzo-compressed-length-consistency.md",
         "docs/plans/2026-06-13-lzop-extra-header-length-boundary.md",
         "docs/plans/2026-06-13-lzop-zero-progress-read.md",
+        "docs/plans/2026-06-13-location-independent-make.md",
     ]
 
     for relative_path in required_files:
@@ -846,6 +848,7 @@ def main():
     compressed_length_plan = COMPRESSED_LENGTH_PLAN.read_text(encoding="utf-8") if COMPRESSED_LENGTH_PLAN.exists() else ""
     extra_header_length_plan = EXTRA_HEADER_LENGTH_PLAN.read_text(encoding="utf-8") if EXTRA_HEADER_LENGTH_PLAN.exists() else ""
     zero_progress_read_plan = ZERO_PROGRESS_READ_PLAN.read_text(encoding="utf-8") if ZERO_PROGRESS_READ_PLAN.exists() else ""
+    location_independent_make_plan = LOCATION_INDEPENDENT_MAKE_PLAN.read_text(encoding="utf-8") if LOCATION_INDEPENDENT_MAKE_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -888,6 +891,10 @@ def main():
             failures)
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, build, and check gate targets",
+            failures)
+    require("ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))" in makefile and
+            '@python3 "$(ROOT)/scripts/check-baseline.py"' in makefile,
+            "Makefile must invoke the baseline checker through the loaded repository root",
             failures)
     workflow_lines = ci_workflow.splitlines()
     require(workflow_lines.count("permissions:") == 1 and
@@ -1075,6 +1082,9 @@ def main():
     require("distributed input traversal failures" in readme,
             "README must document distributed input traversal failure propagation",
             failures)
+    require("absolute Makefile path" in readme and "any working directory" in readme,
+            "README must document location-independent Make verification",
+            failures)
     require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "malformed index positions" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision and "index rename failures" in vision,
             "VISION must describe the current static build baseline",
             failures)
@@ -1116,6 +1126,10 @@ def main():
             failures)
     require("Bounded lzop extra-header field allocation" in changes,
             "CHANGES must record lzop extra-header allocation validation",
+            failures)
+    require("Make verification target derive the checkout root" in changes and
+            "external directories" in changes,
+            "CHANGES must record location-independent Make verification",
             failures)
     require("status: completed" in plan,
             "plan must be marked completed",
@@ -1241,6 +1255,32 @@ def main():
             and all(item in zero_progress_read_verification for item in zero_progress_read_required_evidence)
             and re.search(r"\b(?:pending|todo|tbd|not run)\b", zero_progress_read_verification, re.IGNORECASE) is None,
             "lzop zero-progress plan must record completed status and actual verification",
+            failures)
+    location_independent_make_statuses = re.findall(
+        r"^status: .+$", location_independent_make_plan, flags=re.MULTILINE
+    )
+    location_independent_make_sections = location_independent_make_plan.split(
+        "## Verification Completed\n", 1
+    )
+    location_independent_make_verification = (
+        location_independent_make_sections[1]
+        if len(location_independent_make_sections) == 2 else ""
+    )
+    location_independent_make_required_evidence = (
+        "Root and external-directory Make gates passed",
+        "root-derivation mutation failed",
+        "checker-invocation mutation failed",
+        "plan-status mutation failed",
+        "plan-evidence mutation failed",
+        "documentation mutation failed",
+    )
+    require(location_independent_make_statuses == ["status: completed"]
+            and all(item in location_independent_make_verification
+                    for item in location_independent_make_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          location_independent_make_verification,
+                          re.IGNORECASE) is None,
+            "location-independent Make plan must record completed status and actual verification",
             failures)
     require("zero bytes" in read("AGENTS.md") and
             "Positive-length Lzop reads that return zero bytes fail closed" in read("README.md") and

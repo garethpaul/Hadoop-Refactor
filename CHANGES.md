@@ -2,6 +2,8 @@
 
 ## 2026-06-13
 
+- Made every Make verification target derive the checkout root so the legacy
+  baseline works from external directories.
 - Rejected zero-progress positive-length Lzop reads so malformed or
   non-conforming streams cannot hold the read loop indefinitely.
 - Bounded lzop extra-header field allocation at the existing maximum block size
