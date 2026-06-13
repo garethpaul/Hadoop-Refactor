@@ -58,9 +58,9 @@ Current baseline: `make lint`, `make test`, `make build`, and `make check` run
 `scripts/check-baseline.py`, which validates legacy Ant/Ivy metadata, native
 shell script syntax, source/test inventory, build revision helper fallback
 behavior, `LzoIndex` empty-index handling, malformed index byte counts,
-malformed index positions, oversized LZO block sizes, index open failures,
-direct and distributed index rename failures, distributed input traversal
-failures, and HTTPS download endpoints
+malformed index positions, oversized LZO block sizes, impossible compressed
+length relations, index open failures, index rename failures in direct and
+distributed paths, distributed input traversal failures, and HTTPS download endpoints
 without requiring Ant on the local host.
 GitHub Actions installs Python 3.12 and Temurin Java 8 with pinned actions,
 credential-free checkout, and read-only permissions, then runs `make check`

@@ -303,12 +303,18 @@ public class LzopInputStream extends BlockDecompressorStream {
         " (probably corrupt file)");
     }
 
+    if (compressedLen > uncompressedBlockSize) {
+      throw new IOException("Compressed length " + compressedLen +
+        " exceeds uncompressed length " + uncompressedBlockSize +
+        " (probably corrupt file)");
+    }
+
     LzopDecompressor ldecompressor = (LzopDecompressor)decompressor;
     // If the lzo compressor compresses a block of data, and that compression
     // actually makes the block larger, it writes the block as uncompressed instead.
     // In this case, the compressed size and the uncompressed size in the header
     // are identical, and there is NO compressed checksum written.
-    ldecompressor.setCurrentBlockUncompressed(compressedLen >= uncompressedBlockSize);
+    ldecompressor.setCurrentBlockUncompressed(compressedLen == uncompressedBlockSize);
 
     for (DChecksum chk : dcheck.keySet()) {
       dcheck.put(chk, readInt(in, buf, 4));

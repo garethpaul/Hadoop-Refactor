@@ -77,7 +77,9 @@ so quoted path handling stays covered. The Java smoke harness also checks
 requiring the full Ant test path. It also checks malformed index positions so
 negative or non-increasing block offsets are rejected before split alignment
 uses them. It also checks oversized LZO block sizes so corrupt streams are
-rejected before indexers or split readers seek across the file. Missing index
+rejected before indexers or split readers seek across the file. Compressed
+lengths larger than their declared uncompressed lengths are also rejected
+before checksum selection, allocation, or seeking. Missing index
 files fall back to unsplittable reads while non-missing index open failures
 still surface to callers. Temporary index rename failures are surfaced and
 cleaned up so failed index publication cannot look successful. The same checked

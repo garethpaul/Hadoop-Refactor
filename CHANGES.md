@@ -1,5 +1,11 @@
 # Changes
 
+## 2026-06-13
+
+- Rejected compressed LZO block lengths larger than their declared
+  uncompressed lengths before decompression, index generation, or split
+  scanning can continue across malformed input.
+
 ## 2026-06-12
 
 - Propagated distributed input traversal failures so missing, inaccessible, or

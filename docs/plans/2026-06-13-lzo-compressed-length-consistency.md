@@ -1,6 +1,6 @@
 # LZO Compressed Length Consistency
 
-status: planned
+status: completed
 
 ## Context
 
@@ -69,3 +69,25 @@ that does not require modernizing the historical Hadoop dependency graph.
 - `git diff --check`
 - Hostile mutations removing each production guard, the smoke assertion, plan
   completion, or verification evidence must be rejected.
+
+## Work Completed
+
+- Rejected compressed lengths greater than declared uncompressed lengths in
+  index generation, stream decompression, and distributed split scanning.
+- Preserved equal-length uncompressed blocks and shorter compressed blocks.
+- Added an executable Java smoke regression plus static contracts for all three
+  production paths.
+- Updated README, security, vision, and change documentation with the malformed
+  input boundary.
+
+## Verification Completed
+
+- All four Make gates (`make lint`, `make test`, `make build`, and `make check`)
+  passed locally with the executable `assertCompressedLengthConsistency` Java
+  smoke regression.
+- `python3 -m py_compile scripts/check-baseline.py` passed.
+- `git diff --check` passed.
+- Seven isolated hostile mutations were rejected: removal of each production
+  guard, restoration of greater-than-or-equal uncompressed classification,
+  removal of the smoke invocation, stale plan status, and missing verification
+  evidence.

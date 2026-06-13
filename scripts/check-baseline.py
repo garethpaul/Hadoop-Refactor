@@ -21,6 +21,7 @@ INDEX_POSITION_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-position-order-gua
 CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
 RECORD_WRITER_RENAME_PLAN = ROOT / "docs/plans/2026-06-10-distributed-index-rename-guard.md"
 INPUT_TRAVERSAL_PLAN = ROOT / "docs/plans/2026-06-12-distributed-input-error-propagation.md"
+COMPRESSED_LENGTH_PLAN = ROOT / "docs/plans/2026-06-13-lzo-compressed-length-consistency.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -294,6 +295,7 @@ public class LzoIndexEmptyHarness {
     assertCorruptIndexByteCountRejected();
     assertInvalidIndexPositionsRejected();
     assertOversizedIndexBlockSizesRejected();
+    assertCompressedLengthConsistency();
     assertMissingIndexReturnsEmpty();
     assertOpenFailurePropagates();
     assertRenameFailurePropagates();
@@ -341,6 +343,12 @@ public class LzoIndexEmptyHarness {
     assertBlockSizeRejected(LzoCodec.MAX_BLOCK_SIZE + 1, 1, "Uncompressed block size");
     assertBlockSizeRejected(1, 0, "Could not read compressed block size");
     assertBlockSizeRejected(1, LzoCodec.MAX_BLOCK_SIZE + 1, "Compressed block size");
+  }
+
+  private static void assertCompressedLengthConsistency() throws Exception {
+    LzoIndex.validateBlockSizes(8, 8);
+    LzoIndex.validateBlockSizes(8, 4);
+    assertBlockSizeRejected(8, 9, "exceeds uncompressed block size");
   }
 
   private static void assertBlockSizeRejected(int uncompressedBlockSize,
@@ -554,6 +562,7 @@ def main():
         "docs/plans/2026-06-10-ci-baseline.md",
         "docs/plans/2026-06-10-distributed-index-rename-guard.md",
         "docs/plans/2026-06-12-distributed-input-error-propagation.md",
+        "docs/plans/2026-06-13-lzo-compressed-length-consistency.md",
     ]
 
     for relative_path in required_files:
@@ -578,6 +587,7 @@ def main():
     ci_plan = CI_PLAN.read_text(encoding="utf-8") if CI_PLAN.exists() else ""
     record_writer_rename_plan = RECORD_WRITER_RENAME_PLAN.read_text(encoding="utf-8") if RECORD_WRITER_RENAME_PLAN.exists() else ""
     input_traversal_plan = INPUT_TRAVERSAL_PLAN.read_text(encoding="utf-8") if INPUT_TRAVERSAL_PLAN.exists() else ""
+    compressed_length_plan = COMPRESSED_LENGTH_PLAN.read_text(encoding="utf-8") if COMPRESSED_LENGTH_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -698,11 +708,25 @@ def main():
     require("assertOversizedIndexBlockSizesRejected" in Path(__file__).read_text(encoding="utf-8"),
             "LzoIndex smoke check must cover malformed LZO block sizes",
             failures)
+    require("compressedBlockSize > uncompressedBlockSize" in lzo_index_source,
+            "LzoIndex.createIndex must reject compressed lengths larger than the declared uncompressed length",
+            failures)
+    checker_source = Path(__file__).read_text(encoding="utf-8")
+    require(checker_source.count("assertCompressedLengthConsistency();") == 2
+            and "private static void assertCompressedLengthConsistency()" in checker_source,
+            "LzoIndex smoke check must cover compressed-length consistency",
+            failures)
     require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source and "compressedLen <= 0" in lzop_input_source and "compressedLen > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source,
             "LzopInputStream must reject invalid compressed and uncompressed block sizes",
             failures)
+    require("compressedLen > uncompressedBlockSize" in lzop_input_source and "compressedLen == uncompressedBlockSize" in lzop_input_source,
+            "LzopInputStream must reject impossible compressed lengths and only treat equal lengths as uncompressed",
+            failures)
     require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source and "compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source,
             "LzoSplitRecordReader must reject oversized LZO block sizes before seeking",
+            failures)
+    require("compressedBlockSize > uncompressedBlockSize" in split_record_reader_source,
+            "LzoSplitRecordReader must reject impossible compressed lengths before seeking",
             failures)
     require("import java.io.FileNotFoundException;" in lzo_index_source and "catch (FileNotFoundException fileNotFound)" in lzo_index_source,
             "LzoIndex.readIndex must only fall back when the index file is missing",
@@ -756,6 +780,9 @@ def main():
     require("oversized LZO block sizes" in readme,
             "README must document the oversized LZO block-size guard",
             failures)
+    require("lengths larger than their declared uncompressed lengths" in readme,
+            "README must document compressed-length consistency validation",
+            failures)
     require("index open failures" in readme,
             "README must document the LZO index open-failure guard",
             failures)
@@ -774,11 +801,17 @@ def main():
     require("distributed input traversal failures" in vision,
             "VISION must preserve distributed traversal failure propagation",
             failures)
+    require("impossible compressed" in vision and "length relations" in vision,
+            "VISION must describe compressed-length consistency validation",
+            failures)
     require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security and "malformed index positions" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
     require("GitHub Actions" in security and "make check" in security,
             "SECURITY must describe the hosted CI verification boundary",
+            failures)
+    require("impossible compressed-length" in security,
+            "SECURITY must describe the malformed compressed-length boundary",
             failures)
     require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "malformed index positions" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes and "index rename failures" in changes,
             "CHANGES must record the legacy build baseline",
@@ -788,6 +821,9 @@ def main():
             failures)
     require("distributed input traversal failures" in changes,
             "CHANGES must record distributed traversal failure propagation",
+            failures)
+    require("compressed LZO block lengths larger than their declared" in changes,
+            "CHANGES must record compressed-length consistency validation",
             failures)
     require("status: completed" in plan,
             "plan must be marked completed",
@@ -843,6 +879,28 @@ def main():
             and all(item in input_traversal_verification for item in input_traversal_required_evidence)
             and re.search(r"\b(?:pending|todo|tbd|not run)\b", input_traversal_verification, re.IGNORECASE) is None,
             "distributed input traversal plan must record completed status and actual verification",
+            failures)
+    compressed_length_statuses = re.findall(
+        r"^status: .+$", compressed_length_plan, flags=re.MULTILINE
+    )
+    compressed_length_sections = compressed_length_plan.split(
+        "## Verification Completed\n", 1
+    )
+    compressed_length_verification = (
+        compressed_length_sections[1]
+        if len(compressed_length_sections) == 2 else ""
+    )
+    compressed_length_required_evidence = (
+        "All four Make gates",
+        "assertCompressedLengthConsistency",
+        "python3 -m py_compile scripts/check-baseline.py",
+        "git diff --check",
+        "Seven isolated hostile mutations",
+    )
+    require(compressed_length_statuses == ["status: completed"]
+            and all(item in compressed_length_verification for item in compressed_length_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", compressed_length_verification, re.IGNORECASE) is None,
+            "compressed-length consistency plan must record completed status and actual verification",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,
