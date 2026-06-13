@@ -22,6 +22,7 @@ CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
 RECORD_WRITER_RENAME_PLAN = ROOT / "docs/plans/2026-06-10-distributed-index-rename-guard.md"
 INPUT_TRAVERSAL_PLAN = ROOT / "docs/plans/2026-06-12-distributed-input-error-propagation.md"
 COMPRESSED_LENGTH_PLAN = ROOT / "docs/plans/2026-06-13-lzo-compressed-length-consistency.md"
+EXTRA_HEADER_LENGTH_PLAN = ROOT / "docs/plans/2026-06-13-lzop-extra-header-length-boundary.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -527,6 +528,113 @@ public class LzoIndexEmptyHarness {
         )
 
 
+def verify_lzop_extra_header_length(failures):
+    if shutil.which("javac") is None or shutil.which("java") is None:
+        failures.append("javac and java must be available for the lzop header smoke check")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor-lzop-header-") as workdir:
+        workdir = Path(workdir)
+        class_dir = workdir / "classes"
+        class_dir.mkdir()
+        package_dir = workdir / "com/hadoop/compression/lzo"
+        package_dir.mkdir(parents=True)
+        codec_stub = package_dir / "LzoCodec.java"
+        harness = package_dir / "LzopHeaderValidationHarness.java"
+        codec_stub.write_text(
+            """
+package com.hadoop.compression.lzo;
+
+public class LzoCodec {
+  public static final int MAX_BLOCK_SIZE = 64 * 1024 * 1024;
+}
+""".lstrip(),
+            encoding="utf-8",
+        )
+        harness.write_text(
+            """
+package com.hadoop.compression.lzo;
+
+import java.io.IOException;
+
+public class LzopHeaderValidationHarness {
+  public static void main(String[] args) throws Exception {
+    assertEquals(0, LzopHeaderValidation.validateExtraFieldLength(0));
+    assertEquals(LzoCodec.MAX_BLOCK_SIZE,
+      LzopHeaderValidation.validateExtraFieldLength(LzoCodec.MAX_BLOCK_SIZE));
+    assertRejected(-1, "must not be negative");
+    assertRejected(LzoCodec.MAX_BLOCK_SIZE + 1, "exceeds max block size");
+  }
+
+  private static void assertEquals(int expected, int actual) {
+    if (expected != actual) {
+      throw new AssertionError("Expected " + expected + " but got " + actual);
+    }
+  }
+
+  private static void assertRejected(int length, String expectedMessage)
+      throws Exception {
+    try {
+      LzopHeaderValidation.validateExtraFieldLength(length);
+      throw new AssertionError("Malformed extra header length was accepted: " + length);
+    } catch (IOException expected) {
+      if (expected.getMessage().indexOf(expectedMessage) < 0) {
+        throw new AssertionError("Unexpected extra header message: " +
+          expected.getMessage());
+      }
+    }
+  }
+}
+""".lstrip(),
+            encoding="utf-8",
+        )
+        validator = ROOT / "src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java"
+        compile_result = subprocess.run(
+            [
+                "javac",
+                "-source",
+                "1.6",
+                "-target",
+                "1.6",
+                "-d",
+                str(class_dir),
+                str(codec_stub),
+                str(validator),
+                str(harness),
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            compile_result.returncode == 0,
+            "Lzop header smoke check must compile: " + compile_result.stderr.strip(),
+            failures,
+        )
+        if compile_result.returncode != 0:
+            return
+
+        run_result = subprocess.run(
+            [
+                "java",
+                "-cp",
+                str(class_dir),
+                "com.hadoop.compression.lzo.LzopHeaderValidationHarness",
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            run_result.returncode == 0,
+            "Lzop header smoke harness must enforce bounded lengths: " +
+            (run_result.stderr or run_result.stdout).strip(),
+            failures,
+        )
+
+
 def main():
     failures = []
     required_files = [
@@ -548,6 +656,7 @@ def main():
         "src/native/packageNativeHadoop.sh",
         "src/java/com/hadoop/compression/lzo/LzoCodec.java",
         "src/java/com/hadoop/compression/lzo/LzoIndex.java",
+        "src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java",
         "src/test/com/hadoop/compression/lzo/TestLzoCodec.java",
         "docs/plans/2026-06-08-legacy-build-baseline.md",
         "docs/plans/2026-06-08-native-packaging-guard.md",
@@ -563,6 +672,7 @@ def main():
         "docs/plans/2026-06-10-distributed-index-rename-guard.md",
         "docs/plans/2026-06-12-distributed-input-error-propagation.md",
         "docs/plans/2026-06-13-lzo-compressed-length-consistency.md",
+        "docs/plans/2026-06-13-lzop-extra-header-length-boundary.md",
     ]
 
     for relative_path in required_files:
@@ -572,6 +682,7 @@ def main():
     ivysettings = read("ivy/ivysettings.xml")
     lzo_index_source = read("src/java/com/hadoop/compression/lzo/LzoIndex.java")
     lzop_input_source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
+    lzop_header_validation_source = read("src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java")
     split_record_reader_source = read("src/java/com/hadoop/mapreduce/LzoSplitRecordReader.java")
     index_record_writer_source = read("src/java/com/hadoop/mapreduce/LzoIndexRecordWriter.java")
     distributed_indexer_source = read("src/java/com/hadoop/compression/lzo/DistributedLzoIndexer.java")
@@ -588,6 +699,7 @@ def main():
     record_writer_rename_plan = RECORD_WRITER_RENAME_PLAN.read_text(encoding="utf-8") if RECORD_WRITER_RENAME_PLAN.exists() else ""
     input_traversal_plan = INPUT_TRAVERSAL_PLAN.read_text(encoding="utf-8") if INPUT_TRAVERSAL_PLAN.exists() else ""
     compressed_length_plan = COMPRESSED_LENGTH_PLAN.read_text(encoding="utf-8") if COMPRESSED_LENGTH_PLAN.exists() else ""
+    extra_header_length_plan = EXTRA_HEADER_LENGTH_PLAN.read_text(encoding="utf-8") if EXTRA_HEADER_LENGTH_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -722,6 +834,17 @@ def main():
     require("compressedLen > uncompressedBlockSize" in lzop_input_source and "compressedLen == uncompressedBlockSize" in lzop_input_source,
             "LzopInputStream must reject impossible compressed lengths and only treat equal lengths as uncompressed",
             failures)
+    require("extraFieldLength < 0" in lzop_header_validation_source and
+            "extraFieldLength > LzoCodec.MAX_BLOCK_SIZE" in lzop_header_validation_source and
+            "LzopHeaderValidation.validateExtraFieldLength(hitem)" in lzop_input_source and
+            "new byte[extraFieldLength]" in lzop_input_source,
+            "LzopInputStream must bound extra-header lengths before allocation",
+            failures)
+    require("verify_lzo_index_empty_alignment(failures)\n    verify_lzop_extra_header_length(failures)" in checker_source and
+            "assertRejected(-1, \"must not be negative\")" in checker_source and
+            checker_source.count("assertRejected(LzoCodec.MAX_BLOCK_SIZE + 1") == 2,
+            "Lzop extra-header smoke coverage must execute both rejected boundaries",
+            failures)
     require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source and "compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source,
             "LzoSplitRecordReader must reject oversized LZO block sizes before seeking",
             failures)
@@ -761,6 +884,7 @@ def main():
             "DistributedLzoIndexer entry points must preserve traversal failure propagation",
             failures)
     verify_lzo_index_empty_alignment(failures)
+    verify_lzop_extra_header_length(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
             ".gitignore must exclude generated build products and local machine files",
@@ -783,6 +907,9 @@ def main():
     require("lengths larger than their declared uncompressed lengths" in readme,
             "README must document compressed-length consistency validation",
             failures)
+    require("extra-header fields are bounded" in readme,
+            "README must document lzop extra-header length validation",
+            failures)
     require("index open failures" in readme,
             "README must document the LZO index open-failure guard",
             failures)
@@ -804,6 +931,9 @@ def main():
     require("impossible compressed" in vision and "length relations" in vision,
             "VISION must describe compressed-length consistency validation",
             failures)
+    require("extra-header allocation" in vision,
+            "VISION must describe lzop extra-header allocation bounds",
+            failures)
     require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security and "malformed index positions" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
@@ -812,6 +942,9 @@ def main():
             failures)
     require("impossible compressed-length" in security,
             "SECURITY must describe the malformed compressed-length boundary",
+            failures)
+    require("bounded extra-header fields" in security,
+            "SECURITY must describe the lzop extra-header boundary",
             failures)
     require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "malformed index positions" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes and "index rename failures" in changes,
             "CHANGES must record the legacy build baseline",
@@ -824,6 +957,9 @@ def main():
             failures)
     require("compressed LZO block lengths larger than their declared" in changes,
             "CHANGES must record compressed-length consistency validation",
+            failures)
+    require("Bounded lzop extra-header field allocation" in changes,
+            "CHANGES must record lzop extra-header allocation validation",
             failures)
     require("status: completed" in plan,
             "plan must be marked completed",
@@ -901,6 +1037,30 @@ def main():
             and all(item in compressed_length_verification for item in compressed_length_required_evidence)
             and re.search(r"\b(?:pending|todo|tbd|not run)\b", compressed_length_verification, re.IGNORECASE) is None,
             "compressed-length consistency plan must record completed status and actual verification",
+            failures)
+    extra_header_length_statuses = re.findall(
+        r"^status: .+$", extra_header_length_plan, flags=re.MULTILINE
+    )
+    extra_header_length_sections = extra_header_length_plan.split(
+        "## Verification Completed\n", 1
+    )
+    extra_header_length_verification = (
+        extra_header_length_sections[1]
+        if len(extra_header_length_sections) == 2 else ""
+    )
+    extra_header_length_required_evidence = (
+        "focused lzop extra-header smoke harness passed",
+        "All four Make gates passed",
+        "python3 -m py_compile scripts/check-baseline.py",
+        "Validator-call removal failed",
+        "Negative-bound removal and upper-bound removal",
+        "Harness-invocation removal failed",
+        "hosted pull-request and CodeQL snapshot",
+    )
+    require(extra_header_length_statuses == ["status: completed"]
+            and all(item in extra_header_length_verification for item in extra_header_length_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", extra_header_length_verification, re.IGNORECASE) is None,
+            "lzop extra-header plan must record completed status and actual verification",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,

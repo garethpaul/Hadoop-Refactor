@@ -200,7 +200,10 @@ public class LzopInputStream extends BlockDecompressorStream {
       adler.reset();
       crc32.reset();
       hitem = readHeaderItem(in, buf, 4, adler, crc32);
-      readHeaderItem(in, new byte[hitem], hitem, adler, crc32);
+      int extraFieldLength =
+        LzopHeaderValidation.validateExtraFieldLength(hitem);
+      readHeaderItem(in, new byte[extraFieldLength], extraFieldLength,
+        adler, crc32);
       checksum = (int)(useCRC32 ? crc32.getValue() : adler.getValue());
       if (checksum != readHeaderItem(in, buf, 4, adler, crc32)) {
         throw new IOException("Invalid checksum for extra header field");

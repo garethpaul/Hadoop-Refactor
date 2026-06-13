@@ -1,6 +1,6 @@
 # Bound Lzop Extra Header Lengths
 
-status: planned
+status: completed
 
 ## Context
 
@@ -47,8 +47,27 @@ metadata; there is no stored-data migration.
 
 ## Work Completed
 
-Pending implementation.
+- Added a package-private production validator that accepts zero through the
+  existing 64 MiB maximum block size and returns checked `IOException` failures
+  for negative or oversized extra-header lengths.
+- Routed the lzop extra-field allocation through that validator before creating
+  the byte array or reading checksum-covered field data.
+- Added a Java 6-compatible smoke harness that compiles and invokes the real
+  validator at both accepted and rejected boundaries.
+- Extended source, harness, documentation, and plan contracts across the
+  maintained baseline.
 
 ## Verification Completed
 
-Pending implementation and verification.
+- The focused lzop extra-header smoke harness passed for zero, 64 MiB, negative
+  one, and 64 MiB plus one.
+- All four Make gates passed with the updated deterministic baseline.
+- `python3 -m py_compile scripts/check-baseline.py`, maintained shell syntax,
+  XML parsing, and `git diff --check` passed.
+- Validator-call removal failed the source contract.
+- Negative-bound removal and upper-bound removal each failed both the source
+  contract and executable Java harness.
+- Harness-invocation removal failed the smoke-coverage contract.
+- Intended-file generated-artifact and secret-pattern scans passed.
+- The hosted pull-request and CodeQL snapshot is recorded separately after
+  push; this plan claims only the completed pre-push verification above.

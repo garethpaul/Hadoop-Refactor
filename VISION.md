@@ -27,6 +27,7 @@ Priority:
 - Keep GitHub Actions aligned with the Python and Java requirements of the
   local `make check` baseline
 - Preserve propagation of distributed input traversal failures to automation
+- Bound file-controlled lzop extra-header allocation before checksum parsing
 - Avoid broad Hadoop upgrades without compatibility planning
 
 Next priorities:
@@ -59,9 +60,10 @@ Current baseline: `make lint`, `make test`, `make build`, and `make check` run
 shell script syntax, source/test inventory, build revision helper fallback
 behavior, `LzoIndex` empty-index handling, malformed index byte counts,
 malformed index positions, oversized LZO block sizes, impossible compressed
-length relations, index open failures, index rename failures in direct and
-distributed paths, distributed input traversal failures, and HTTPS download endpoints
-without requiring Ant on the local host.
+length relations, bounded lzop extra-header allocation, index open failures,
+index rename failures in direct and distributed paths, distributed input
+traversal failures, and HTTPS download endpoints without requiring Ant on the
+local host.
 GitHub Actions installs Python 3.12 and Temurin Java 8 with pinned actions,
 credential-free checkout, and read-only permissions, then runs `make check`
 for pushes and pull requests.

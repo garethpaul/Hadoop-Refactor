@@ -2,6 +2,8 @@
 
 ## 2026-06-13
 
+- Bounded lzop extra-header field allocation at the existing maximum block size
+  and added an executable Java 6-compatible boundary harness.
 - Rejected compressed LZO block lengths larger than their declared
   uncompressed lengths before decompression, index generation, or split
   scanning can continue across malformed input.
