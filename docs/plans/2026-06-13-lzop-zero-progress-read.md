@@ -1,6 +1,6 @@
 # Reject Zero-Progress Lzop Reads
 
-status: in_progress
+status: completed
 
 ## Context
 
@@ -40,3 +40,24 @@ Conforming blocking streams are unchanged because positive-length reads return
 data or EOF. A non-conforming stream that previously spun forever now fails
 closed. Rollback restores the unbounded loop; no persisted data or index format
 changes exist.
+
+## Work Completed
+
+- Added a checked zero-progress failure to the existing `readFully` loop while
+  preserving chunked reads and `EOFException` behavior.
+- Added a Java 6-compatible smoke harness compiled from the extracted production
+  helper and bounded its execution with a five-second timeout.
+- Added source, harness, plan, and project-guidance contracts.
+
+## Verification Completed
+
+- The focused Lzop read-progress smoke harness passed.
+- All four Make gates passed with the updated deterministic baseline.
+- `python3 -m py_compile scripts/check-baseline.py`, maintained shell syntax,
+  XML parsing, and `git diff --check` passed.
+- The zero-progress rejection removal mutation failed.
+- The harness-scenario removal mutation failed.
+- The subprocess-timeout removal mutation failed.
+- Intended-file generated-artifact and secret-pattern scans passed.
+- The hosted pull-request and CodeQL snapshot is recorded separately after
+  push; this plan claims only completed pre-push verification above.

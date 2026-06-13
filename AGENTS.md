@@ -39,6 +39,7 @@
 
 - No required secret or credential file was identified in the repository scan. If you add integrations later, keep secrets out of git.
 - Keep LZO block-size validation explicit for index generation, split readers, and stream decompression because compressed files may be untrusted input.
+- Keep `LzopInputStream.readFully` fail-closed when a positive-length read returns zero bytes so malformed streams cannot spin indefinitely.
 - See `SECURITY.md` for vulnerability reporting and safe research guidance.
 - See `VISION.md` for project direction and contribution guardrails.
 - Run `make lint`, `make test`, `make build`, and `make check` before pushing changes to build metadata, native scripts, Java source, tests, or dependency download configuration.

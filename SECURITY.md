@@ -37,6 +37,8 @@ Helpful reports include:
   propagation, oversized block sizes, bounded extra-header fields, and
   impossible compressed-length relations covered before changing index or
   stream parsing code.
+- Positive-length Lzop reads must make progress or fail with `IOException`; a
+  zero-byte result must not create an unbounded parsing loop.
 - Treat failed temporary-index renames as failed indexing operations in both
   direct and distributed jobs; never report success without a published index.
 - Propagate distributed input traversal failures so missing, inaccessible, or

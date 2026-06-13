@@ -28,6 +28,7 @@ Priority:
   local `make check` baseline
 - Preserve propagation of distributed input traversal failures to automation
 - Bound file-controlled lzop extra-header allocation before checksum parsing
+- Reject zero-progress positive-length Lzop reads instead of spinning
 - Avoid broad Hadoop upgrades without compatibility planning
 
 Next priorities:

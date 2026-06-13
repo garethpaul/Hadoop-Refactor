@@ -2,6 +2,8 @@
 
 ## 2026-06-13
 
+- Rejected zero-progress positive-length Lzop reads so malformed or
+  non-conforming streams cannot hold the read loop indefinitely.
 - Bounded lzop extra-header field allocation at the existing maximum block size
   and added an executable Java 6-compatible boundary harness.
 - Rejected compressed LZO block lengths larger than their declared

@@ -74,6 +74,10 @@ public class LzopInputStream extends BlockDecompressorStream {
       if ( ret < 0 ) {
         throw new EOFException("Premature EOF from inputStream");
       }
+      if ( ret == 0 ) {
+        throw new IOException("Input stream made no progress while reading " +
+          len + " bytes");
+      }
       toRead -= ret;
       off += ret;
     }

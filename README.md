@@ -80,9 +80,11 @@ uses them. It also checks oversized LZO block sizes so corrupt streams are
 rejected before indexers or split readers seek across the file. Compressed
 lengths larger than their declared uncompressed lengths are also rejected
 before checksum selection, allocation, or seeking. File-controlled lzop
-extra-header fields are bounded before allocation and checksum parsing. Missing
-index files fall back to unsplittable reads while non-missing index open failures
-still surface to callers. Temporary index rename failures are surfaced and
+extra-header fields are bounded before allocation and checksum parsing.
+Positive-length Lzop reads that return zero bytes fail closed instead of
+spinning indefinitely. Missing index files fall back to unsplittable reads
+while non-missing index open failures still surface to callers. Temporary index
+rename failures are surfaced and
 cleaned up so failed index publication cannot look successful. The same checked
 publication path is used by direct and distributed index generation.
 Distributed input traversal failures also propagate to the command instead of
