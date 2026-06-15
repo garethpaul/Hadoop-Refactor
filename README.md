@@ -82,7 +82,9 @@ lengths larger than their declared uncompressed lengths are also rejected
 before checksum selection, allocation, or seeking. File-controlled lzop
 extra-header fields are bounded before allocation and checksum parsing.
 Positive-length Lzop reads that return zero bytes fail closed instead of
-spinning indefinitely. Missing index files fall back to unsplittable reads
+spinning indefinitely.
+Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
+Missing index files fall back to unsplittable reads
 while non-missing index open failures still surface to callers. Temporary index
 rename failures are surfaced and
 cleaned up so failed index publication cannot look successful. The same checked
@@ -142,6 +144,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   target guardrails.
 - See `docs/plans/2026-06-10-ci-baseline.md` for the hosted GitHub Actions
   baseline.
+- See `docs/plans/2026-06-15-lzop-close-progress.md` for bounded close-time
+  decompressor draining.
 
 ## Contributing
 

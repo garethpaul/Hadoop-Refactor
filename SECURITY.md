@@ -39,6 +39,7 @@ Helpful reports include:
   stream parsing code.
 - Positive-length Lzop reads must make progress or fail with `IOException`; a
   zero-byte result must not create an unbounded parsing loop.
+- Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
 - Treat failed temporary-index renames as failed indexing operations in both
   direct and distributed jobs; never report success without a published index.
 - Propagate distributed input traversal failures so missing, inaccessible, or

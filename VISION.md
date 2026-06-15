@@ -29,6 +29,7 @@ Priority:
 - Preserve propagation of distributed input traversal failures to automation
 - Bound file-controlled lzop extra-header allocation before checksum parsing
 - Reject zero-progress positive-length Lzop reads instead of spinning
+- Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
 - Avoid broad Hadoop upgrades without compatibility planning
 
 Next priorities:

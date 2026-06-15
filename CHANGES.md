@@ -1,5 +1,7 @@
 # Changes
 
+- Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
+
 ## 2026-06-13
 
 - Made every Make verification target derive the checkout root so the legacy

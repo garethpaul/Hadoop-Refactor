@@ -352,15 +352,37 @@ public class LzopInputStream extends BlockDecompressorStream {
     return noCompressedBytes;
   }
 
+  static void drainDecompressor(Decompressor decompressor) throws IOException {
+    byte[] closeBuffer = new byte[4096];
+    while (!decompressor.finished()) {
+      int decompressed = decompressor.decompress(closeBuffer, 0,
+        closeBuffer.length);
+      if (decompressed <= 0) {
+        throw new IOException("Decompressor made no progress while closing " +
+          "LzopInputStream");
+      }
+    }
+  }
+
   @Override
   public void close() throws IOException {
-    byte[] b = new byte[4096];
-    while (!decompressor.finished()) {
-      decompressor.decompress(b, 0, b.length);
-    }
-    super.close();
+    IOException closeFailure = null;
     try {
-      verifyChecksums();
+      drainDecompressor(decompressor);
+    } catch (IOException e) {
+      closeFailure = e;
+    }
+    try {
+      super.close();
+    } catch (IOException e) {
+      if (closeFailure == null) {
+        closeFailure = e;
+      }
+    }
+    try {
+      if (closeFailure == null) {
+        verifyChecksums();
+      }
     } catch (IOException e) {
       // LZO requires that each file ends with 4 trailing zeroes.  If we are here,
       // the file didn't.  It's not critical, though, so log and eat it in this case.
@@ -368,6 +390,9 @@ public class LzopInputStream extends BlockDecompressorStream {
     } finally{
       //return the decompressor to the pool, the function itself handles null.
       CodecPool.returnDecompressor(decompressor);
+    }
+    if (closeFailure != null) {
+      throw closeFailure;
     }
   }
 }
