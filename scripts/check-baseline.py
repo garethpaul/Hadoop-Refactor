@@ -900,6 +900,122 @@ public class LzopCloseProgressHarness {
         )
 
 
+def verify_lzop_read_decompress_progress(failures):
+    if shutil.which("javac") is None or shutil.which("java") is None:
+        failures.append("javac and java must be available for the lzop read-decompress progress smoke check")
+        return
+
+    source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
+    require_input = extract_java_block(
+        source,
+        r"^\s*static void requireInputAfterZeroProgress\(Decompressor decompressor\)",
+    )
+    if require_input is None:
+        failures.append("Lzop read-decompress progress smoke check must extract requireInputAfterZeroProgress")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor-lzop-read-decompress-") as workdir:
+        workdir = Path(workdir)
+        class_dir = workdir / "classes"
+        class_dir.mkdir()
+        harness = workdir / "LzopReadDecompressProgressHarness.java"
+        hadoop_jar = ROOT / "lib/hadoop-core-0.20.2-cdh3u1.jar"
+        harness.write_text(
+            """
+import java.io.IOException;
+import org.apache.hadoop.io.compress.Decompressor;
+
+public class LzopReadDecompressProgressHarness {
+""".lstrip() + require_input + """
+
+  public static void main(String[] args) throws Exception {
+    assertInputRequestAccepted();
+    assertStalledDecompressorRejected();
+  }
+
+  private static void assertInputRequestAccepted() throws Exception {
+    requireInputAfterZeroProgress(new ProgressDecompressor(true));
+  }
+
+  private static void assertStalledDecompressorRejected() throws Exception {
+    try {
+      requireInputAfterZeroProgress(new ProgressDecompressor(false));
+      throw new AssertionError("Stalled read decompressor was accepted");
+    } catch (IOException expected) {
+      if (expected.getMessage().indexOf("made no progress") < 0) {
+        throw new AssertionError("Unexpected read-progress message: " +
+          expected.getMessage());
+      }
+    }
+  }
+
+  private static final class ProgressDecompressor implements Decompressor {
+    private final boolean needsInput;
+
+    ProgressDecompressor(boolean needsInput) {
+      this.needsInput = needsInput;
+    }
+
+    public void setInput(byte[] b, int off, int len) { }
+    public boolean needsInput() { return needsInput; }
+    public void setDictionary(byte[] b, int off, int len) { }
+    public boolean needsDictionary() { return false; }
+    public boolean finished() { return false; }
+    public int decompress(byte[] b, int off, int len) { return 0; }
+    public void reset() { }
+    public void end() { }
+  }
+}
+""",
+            encoding="utf-8",
+        )
+        compile_result = subprocess.run(
+            [
+                "javac",
+                "-source",
+                "1.6",
+                "-target",
+                "1.6",
+                "-cp",
+                str(hadoop_jar),
+                "-d",
+                str(class_dir),
+                str(harness),
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            compile_result.returncode == 0,
+            "Lzop read-decompress progress smoke check must compile: " + compile_result.stderr.strip(),
+            failures,
+        )
+        if compile_result.returncode != 0:
+            return
+
+        try:
+            run_result = subprocess.run(
+                ["java", "-cp", str(class_dir) + os.pathsep + str(hadoop_jar),
+                 "LzopReadDecompressProgressHarness"],
+                cwd=str(ROOT),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            failures.append("Lzop read-decompress progress smoke harness must not hang on stalled decompression")
+            return
+        require(
+            run_result.returncode == 0,
+            "Lzop read-decompress progress smoke harness must preserve input requests and reject stalls: " +
+            (run_result.stderr or run_result.stdout).strip(),
+            failures,
+        )
+
+
 def main():
     failures = []
     required_files = [
@@ -941,6 +1057,7 @@ def main():
         "docs/plans/2026-06-13-lzop-zero-progress-read.md",
         "docs/plans/2026-06-13-location-independent-make.md",
         "docs/plans/2026-06-15-lzop-close-progress.md",
+        "docs/plans/2026-06-17-lzop-read-decompress-progress.md",
     ]
 
     for relative_path in required_files:
@@ -1128,7 +1245,7 @@ def main():
             "LzopInputStream.readFully must reject zero-progress reads",
             failures)
     require(checker_source.count("assertZeroProgressRejected();") == 2 and
-            bounded_timeout_count == 2 and
+            bounded_timeout_count == 3 and
             "verify_lzop_read_progress(failures)" in checker_source,
             "Lzop read-progress smoke coverage must execute with a bounded timeout",
             failures)
@@ -1146,8 +1263,19 @@ def main():
     require(checker_source.count("assertMultiStepDrainCompletes();") == 2 and
             checker_source.count("assertZeroProgressCloseRejected();") == 2 and
             "verify_lzop_close_progress(failures)" in checker_source and
-            bounded_timeout_count == 2,
+            bounded_timeout_count == 3,
             "Lzop close-progress smoke coverage must execute both scenarios with a bounded timeout",
+            failures)
+    require("static void requireInputAfterZeroProgress(Decompressor decompressor)" in lzop_input_source and
+            "Decompressor made no progress while reading" in lzop_input_source and
+            "requireInputAfterZeroProgress(decompressor);" in lzop_input_source,
+            "LzopInputStream normal reads must reject stalled decompression",
+            failures)
+    require(checker_source.count("assertInputRequestAccepted();") == 2 and
+            checker_source.count("assertStalledDecompressorRejected();") == 2 and
+            "verify_lzop_read_decompress_progress(failures)" in checker_source and
+            bounded_timeout_count == 3,
+            "Lzop read-decompress progress coverage must execute both scenarios with a bounded timeout",
             failures)
     require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source and "compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source,
             "LzoSplitRecordReader must reject oversized LZO block sizes before seeking",
@@ -1191,6 +1319,7 @@ def main():
     verify_lzop_extra_header_length(failures)
     verify_lzop_read_progress(failures)
     verify_lzop_close_progress(failures)
+    verify_lzop_read_decompress_progress(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
             ".gitignore must exclude generated build products and local machine files",
@@ -1436,6 +1565,11 @@ def main():
     require(all(close_progress_guidance in read(path) for path in
                 ["AGENTS.md", "README.md", "SECURITY.md", "VISION.md", "CHANGES.md"]),
             "Project guidance must document zero-progress Lzop close rejection",
+            failures)
+    read_decompress_progress_guidance = "Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads."
+    require(all(read_decompress_progress_guidance in read(path) for path in
+                ["AGENTS.md", "README.md", "SECURITY.md", "VISION.md", "CHANGES.md"]),
+            "Project guidance must document zero-progress Lzop read-decompress rejection",
             failures)
     close_progress_statuses = re.findall(
         r"^status: .+$", close_progress_plan, flags=re.MULTILINE

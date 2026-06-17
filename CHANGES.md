@@ -1,6 +1,7 @@
 # Changes
 
 - Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
+- Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads.
 
 ## 2026-06-13
 

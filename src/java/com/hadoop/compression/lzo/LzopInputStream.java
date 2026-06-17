@@ -268,16 +268,15 @@ public class LzopInputStream extends BlockDecompressorStream {
           return -1;
         }
       }
-      if (decompressor.needsInput()) {
-        try {
-          getCompressedData();
-        } catch (EOFException e) {
-          eof = true;
-          return -1;
-        } catch (IOException e) {
-          LOG.warn("IOException in getCompressedData; likely LZO corruption.", e);
-          throw e;
-        }
+      requireInputAfterZeroProgress(decompressor);
+      try {
+        getCompressedData();
+      } catch (EOFException e) {
+        eof = true;
+        return -1;
+      } catch (IOException e) {
+        LOG.warn("IOException in getCompressedData; likely LZO corruption.", e);
+        throw e;
       }
     }
 
@@ -285,6 +284,13 @@ public class LzopInputStream extends BlockDecompressorStream {
     noUncompressedBytes += n;
 
     return n;
+  }
+
+  static void requireInputAfterZeroProgress(Decompressor decompressor)
+  throws IOException {
+    if (!decompressor.needsInput()) {
+      throw new IOException("Decompressor made no progress while reading");
+    }
   }
 
   /**

@@ -84,6 +84,7 @@ extra-header fields are bounded before allocation and checksum parsing.
 Positive-length Lzop reads that return zero bytes fail closed instead of
 spinning indefinitely.
 Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
+Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads.
 Missing index files fall back to unsplittable reads
 while non-missing index open failures still surface to callers. Temporary index
 rename failures are surfaced and
