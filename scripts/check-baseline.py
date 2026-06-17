@@ -26,6 +26,7 @@ EXTRA_HEADER_LENGTH_PLAN = ROOT / "docs/plans/2026-06-13-lzop-extra-header-lengt
 ZERO_PROGRESS_READ_PLAN = ROOT / "docs/plans/2026-06-13-lzop-zero-progress-read.md"
 LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independent-make.md"
 CLOSE_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-15-lzop-close-progress.md"
+READ_DECOMPRESS_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-17-lzop-read-decompress-progress.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -1088,6 +1089,7 @@ def main():
     zero_progress_read_plan = ZERO_PROGRESS_READ_PLAN.read_text(encoding="utf-8") if ZERO_PROGRESS_READ_PLAN.exists() else ""
     location_independent_make_plan = LOCATION_INDEPENDENT_MAKE_PLAN.read_text(encoding="utf-8") if LOCATION_INDEPENDENT_MAKE_PLAN.exists() else ""
     close_progress_plan = CLOSE_PROGRESS_PLAN.read_text(encoding="utf-8") if CLOSE_PROGRESS_PLAN.exists() else ""
+    read_decompress_progress_plan = READ_DECOMPRESS_PROGRESS_PLAN.read_text(encoding="utf-8") if READ_DECOMPRESS_PROGRESS_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -1600,6 +1602,40 @@ def main():
                           close_progress_verification,
                           re.IGNORECASE) is None,
             "lzop close-progress plan must record completed status and actual verification",
+            failures)
+    read_decompress_progress_statuses = re.findall(
+        r"^status: .+$", read_decompress_progress_plan, flags=re.MULTILINE
+    )
+    read_decompress_progress_sections = read_decompress_progress_plan.split(
+        "## Verification Completed\n", 1
+    )
+    read_decompress_progress_verification = (
+        read_decompress_progress_sections[1]
+        if len(read_decompress_progress_sections) == 2 else ""
+    )
+    normalized_read_decompress_progress_verification = " ".join(
+        read_decompress_progress_verification.split()
+    )
+    read_decompress_progress_required_evidence = (
+        "pre-fix read hang reproduced",
+        "focused Lzop read-decompress progress smoke harness passed",
+        "All four Make gates passed separately",
+        "absolute Makefile check passed from an external directory",
+        "Six isolated mutations were rejected",
+        "no actionable findings",
+        "Both canonical implementation-head checks passed",
+        "push run 27664412273",
+        "pull-request run 27664415741",
+        "zero open code-scanning, Dependabot, and secret-scanning alerts",
+        "Ant, native LZO libraries, a Hadoop cluster, and production compressed corpora were not available or exercised",
+    )
+    require(read_decompress_progress_statuses == ["status: completed"]
+            and all(item in normalized_read_decompress_progress_verification
+                    for item in read_decompress_progress_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run|not yet)\b",
+                          read_decompress_progress_verification,
+                          re.IGNORECASE) is None,
+            "lzop read-decompress progress plan must record completed status and actual verification",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,

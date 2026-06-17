@@ -1,6 +1,6 @@
 # Reject Zero-Progress Lzop Read Decompression
 
-status: active
+status: completed
 
 ## Context
 
@@ -51,8 +51,34 @@ read loop; no persisted data, index, or wire-format change exists.
 
 ## Work Completed
 
-Pending implementation.
+- Added `requireInputAfterZeroProgress` and called it after zero-output
+  decompression iterations that have not reached a valid terminal boundary.
+- Preserved the existing transition that loads another compressed chunk when
+  the decompressor explicitly requests input.
+- Added a Java 6-compatible fake-decompressor harness for accepted input
+  requests and rejected stalled states under a bounded subprocess timeout.
+- Added mutation-sensitive source, scenario, timeout, guidance, and plan
+  contracts to the maintained baseline.
 
 ## Verification Completed
 
-Pending implementation and validation.
+- The pre-fix read hang reproduced under a two-second standalone timeout.
+- The focused Lzop read-decompress progress smoke harness passed.
+- All four Make gates passed separately: `make lint`, `make test`, `make build`,
+  and `make check`.
+- The absolute Makefile check passed from an external directory.
+- `python3 -m py_compile scripts/check-baseline.py`, maintained shell syntax,
+  XML parsing, and `git diff --check` passed.
+- Six isolated mutations were rejected: guard-call removal, weakened predicate,
+  stalled-scenario removal, input-request scenario removal, timeout removal,
+  and guidance removal.
+- Compound Engineering review found no actionable findings.
+- Generated-artifact, dependency, credential-pattern, conflict-marker,
+  file-mode, clean-worktree, and exact-upstream audits passed.
+- Both canonical implementation-head checks passed at
+  `dd362ef705d1c48c1b00e7581450a9365b73ee22`: push run 27664412273 and
+  pull-request run 27664415741. PR #9 was OPEN, CLEAN, and MERGEABLE, and the
+  exact branch had zero open code-scanning, Dependabot, and secret-scanning
+  alerts.
+- Ant, native LZO libraries, a Hadoop cluster, and production compressed
+  corpora were not available or exercised.
