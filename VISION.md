@@ -27,7 +27,7 @@ Priority:
 - Keep GitHub Actions aligned with the Python and Java requirements of the
   local `make check` baseline
 - Preserve propagation of distributed input traversal failures to automation
-- Bound file-controlled lzop extra-header allocation before checksum parsing
+- Bound and stream file-controlled lzop extra headers during checksum parsing
 - Reject zero-progress positive-length Lzop reads instead of spinning
 - Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
 - Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads.
@@ -63,7 +63,7 @@ Current baseline: `make lint`, `make test`, `make build`, and `make check` run
 shell script syntax, source/test inventory, build revision helper fallback
 behavior, `LzoIndex` empty-index handling, malformed index byte counts,
 malformed index positions, oversized LZO block sizes, impossible compressed
-length relations, bounded lzop extra-header allocation, index open failures,
+length relations, bounded lzop extra-header streaming, index open failures,
 index rename failures in direct and distributed paths, distributed input
 traversal failures, and HTTPS download endpoints without requiring Ant on the
 local host.

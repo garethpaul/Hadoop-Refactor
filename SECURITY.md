@@ -34,7 +34,8 @@ Helpful reports include:
 - Legacy Ant/Ivy dependency metadata is tracked in `build.xml`, `ivy.xml`, and `ivy/libraries.properties`. Checked-in Maven Central download endpoints should use HTTPS, and full rebuilds should document the Ant, Hadoop, Java, and native LZO toolchain used.
 - LZO files may be untrusted compressed input. Keep malformed index byte counts,
   malformed index positions, missing-index fallback behavior, open-failure
-  propagation, oversized block sizes, bounded extra-header fields, and
+  propagation, oversized block sizes, bounded streaming extra-header fields, and
+  missing block terminators, unknown header flags, decompressor output bounds,
   impossible compressed-length relations covered before changing index or
   stream parsing code.
 - Positive-length Lzop reads must make progress or fail with `IOException`; a

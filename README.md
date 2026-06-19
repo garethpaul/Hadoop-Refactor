@@ -80,7 +80,11 @@ uses them. It also checks oversized LZO block sizes so corrupt streams are
 rejected before indexers or split readers seek across the file. Compressed
 lengths larger than their declared uncompressed lengths are also rejected
 before checksum selection, allocation, or seeking. File-controlled lzop
-extra-header fields are bounded before allocation and checksum parsing.
+extra-header fields are bounded and checksum-validated through a fixed-size
+streaming buffer rather than a file-sized allocation.
+Block parsing also rejects missing or partial terminators, unknown header
+flags, decompressor output beyond the declared size, and final checksum
+mismatches before accepting end-of-stream.
 Positive-length Lzop reads that return zero bytes fail closed instead of
 spinning indefinitely.
 Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.

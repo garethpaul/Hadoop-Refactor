@@ -6,3 +6,5 @@ lint test build: check
 
 check:
 	@python3 "$(ROOT)/scripts/check-baseline.py"
+	@python3 "$(ROOT)/scripts/test-lzop-hostile-streams.py"
+	@python3 "$(ROOT)/scripts/test-lzop-hostile-mutations.py"

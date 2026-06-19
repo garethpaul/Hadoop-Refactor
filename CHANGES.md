@@ -1,5 +1,12 @@
 # Changes
 
+- Rejected missing or partial block trailers, unknown high header flags, negative or
+  oversized decompressor output, and true read/close stalls while preserving
+  legitimate input requests.
+- Streamed bounded lzop extra-header fields through fixed-size checksum buffers
+  and made decompressor-pool release idempotent on close and construction
+  failure.
+
 - Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
 - Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads.
 

@@ -812,16 +812,21 @@ public class LzopCloseProgressHarness {
 
   public static void main(String[] args) throws Exception {
     assertMultiStepDrainCompletes();
+    assertInputRequestStopsDrain();
     assertZeroProgressCloseRejected();
   }
 
   private static void assertMultiStepDrainCompletes() throws Exception {
-    drainDecompressor(new SequenceDecompressor(new int[] { 2, 1 }));
+    drainDecompressor(new SequenceDecompressor(new int[] { 2, 1 }, false));
+  }
+
+  private static void assertInputRequestStopsDrain() throws Exception {
+    drainDecompressor(new SequenceDecompressor(new int[] { 0 }, true));
   }
 
   private static void assertZeroProgressCloseRejected() throws Exception {
     try {
-      drainDecompressor(new SequenceDecompressor(new int[] { 0 }));
+      drainDecompressor(new SequenceDecompressor(new int[] { 0 }, false));
       throw new AssertionError("Zero-progress close drain was accepted");
     } catch (IOException expected) {
       if (expected.getMessage().indexOf("made no progress") < 0) {
@@ -833,14 +838,16 @@ public class LzopCloseProgressHarness {
 
   private static final class SequenceDecompressor implements Decompressor {
     private final int[] outputs;
+    private final boolean needsInput;
     private int offset;
 
-    SequenceDecompressor(int[] outputs) {
+    SequenceDecompressor(int[] outputs, boolean needsInput) {
       this.outputs = outputs;
+      this.needsInput = needsInput;
     }
 
     public void setInput(byte[] b, int off, int len) { }
-    public boolean needsInput() { return false; }
+    public boolean needsInput() { return needsInput; }
     public void setDictionary(byte[] b, int off, int len) { }
     public boolean needsDictionary() { return false; }
     public boolean finished() { return offset >= outputs.length; }
@@ -1039,6 +1046,8 @@ def main():
         "src/java/com/hadoop/compression/lzo/LzoCodec.java",
         "src/java/com/hadoop/compression/lzo/LzoIndex.java",
         "src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java",
+        "scripts/test-lzop-hostile-streams.py",
+        "scripts/test-lzop-hostile-mutations.py",
         "src/test/com/hadoop/compression/lzo/TestLzoCodec.java",
         "docs/plans/2026-06-08-legacy-build-baseline.md",
         "docs/plans/2026-06-08-native-packaging-guard.md",
@@ -1225,7 +1234,7 @@ def main():
             and "private static void assertCompressedLengthConsistency()" in checker_source,
             "LzoIndex smoke check must cover compressed-length consistency",
             failures)
-    require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source and "compressedLen <= 0" in lzop_input_source and "compressedLen > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source,
+    require("nextBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source and "compressedLen <= 0" in lzop_input_source and "compressedLen > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source,
             "LzopInputStream must reject invalid compressed and uncompressed block sizes",
             failures)
     require("compressedLen > uncompressedBlockSize" in lzop_input_source and "compressedLen == uncompressedBlockSize" in lzop_input_source,
@@ -1234,8 +1243,27 @@ def main():
     require("extraFieldLength < 0" in lzop_header_validation_source and
             "extraFieldLength > LzoCodec.MAX_BLOCK_SIZE" in lzop_header_validation_source and
             "LzopHeaderValidation.validateExtraFieldLength(hitem)" in lzop_input_source and
-            "new byte[extraFieldLength]" in lzop_input_source,
-            "LzopInputStream must bound extra-header lengths before allocation",
+            "readHeaderBytes(in, extraFieldLength, adler, crc32)" in lzop_input_source and
+            "new byte[extraFieldLength]" not in lzop_input_source,
+            "LzopInputStream must bound and stream extra-header fields",
+            failures)
+    hostile_stream_test = read("scripts/test-lzop-hostile-streams.py")
+    hostile_mutation_test = read("scripts/test-lzop-hostile-mutations.py")
+    require("scripts/test-lzop-hostile-streams.py" in makefile and
+            "scripts/test-lzop-hostile-mutations.py" in makefile and
+            all(name in hostile_stream_test for name in (
+                "rejectsPartialBlockTrailer",
+                "rejectsDeclaredBlockOverrun",
+                "rejectsUnknownHighHeaderFlags",
+                "streamsHeaderBytesWithoutLargeAllocation",
+                "stopsCloseDrainWhenMoreInputIsRequired",
+                "rejectsTrueCloseDrainStalls",
+            )),
+            "Make check must execute the hostile Lzop stream boundary suite",
+            failures)
+    require("MUTATIONS = (" in hostile_mutation_test and
+            "Rejected %d hostile Lzop mutations." in hostile_mutation_test,
+            "Make check must execute mutation-sensitive Lzop stream proofs",
             failures)
     require("verify_lzo_index_empty_alignment(failures)\n    verify_lzop_extra_header_length(failures)" in checker_source and
             "assertRejected(-1, \"must not be negative\")" in checker_source and
@@ -1371,8 +1399,8 @@ def main():
     require("impossible compressed" in vision and "length relations" in vision,
             "VISION must describe compressed-length consistency validation",
             failures)
-    require("extra-header allocation" in vision,
-            "VISION must describe lzop extra-header allocation bounds",
+    require("extra-header streaming" in vision,
+            "VISION must describe bounded lzop extra-header streaming",
             failures)
     require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security and "malformed index positions" in security,
             "SECURITY must describe build dependency download expectations",
@@ -1383,7 +1411,7 @@ def main():
     require("impossible compressed-length" in security,
             "SECURITY must describe the malformed compressed-length boundary",
             failures)
-    require("bounded extra-header fields" in security,
+    require("bounded streaming extra-header fields" in security,
             "SECURITY must describe the lzop extra-header boundary",
             failures)
     require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "malformed index positions" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes and "index rename failures" in changes,
