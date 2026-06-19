@@ -90,6 +90,11 @@ public class LzoSplitRecordReader extends RecordReader<Path, LongWritable> {
                             " exceeds max block size " + LzoCodec.MAX_BLOCK_SIZE +
                             " at position " + rawInputStream.getPos() +
                             " in file " + lzoFile);
+    } else if (compressedBlockSize > uncompressedBlockSize) {
+      throw new IOException("Compressed block size " + compressedBlockSize +
+                            " exceeds uncompressed block size " + uncompressedBlockSize +
+                            " at position " + rawInputStream.getPos() +
+                            " in file " + lzoFile);
     }
 
     // See LzopInputStream.getCompressedData

@@ -158,6 +158,11 @@ public class LzoIndex {
         " exceeds max block size " + LzoCodec.MAX_BLOCK_SIZE +
         " (probably corrupt file)");
     }
+    if (compressedBlockSize > uncompressedBlockSize) {
+      throw new IOException("Compressed block size " + compressedBlockSize +
+        " exceeds uncompressed block size " + uncompressedBlockSize +
+        " (probably corrupt file)");
+    }
   }
 
   /**

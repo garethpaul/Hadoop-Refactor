@@ -76,3 +76,23 @@ successful.
 
 Completed on 2026-06-12 with `make check`, Python checker compilation, diff
 hygiene, and an exception-swallowing mutation rejected by the baseline.
+
+## Work Completed
+
+- Removed the local `IOException` swallowing block from distributed input
+  traversal and preserved the throwing signature through recursive discovery.
+- Kept successful discovery, existing-index skips, zero-length index
+  regeneration, and MapReduce job configuration unchanged.
+- Added a static fail-closed contract and maintenance documentation for
+  filesystem traversal errors.
+
+## Verification Completed
+
+- All four Make gates, `python3 -m py_compile scripts/check-baseline.py`, and
+  `git diff --check` passed locally.
+- Implementation push run `27393718908` and pull-request run `27393721234`
+  passed at commit `e0fe155f5ec92186119aa6fe5782ee4a2ac29b43`.
+- Post-merge push run `27393737055` and CodeQL setup run `27402321777` passed
+  at default-branch merge commit `2035e5583235109166532b66ddf3ebad45ac96d1`.
+- A mutation restoring the `walkPath` exception-swallowing block was rejected
+  by the baseline.

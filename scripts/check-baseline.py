@@ -21,6 +21,12 @@ INDEX_POSITION_PLAN = ROOT / "docs/plans/2026-06-09-lzo-index-position-order-gua
 CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
 RECORD_WRITER_RENAME_PLAN = ROOT / "docs/plans/2026-06-10-distributed-index-rename-guard.md"
 INPUT_TRAVERSAL_PLAN = ROOT / "docs/plans/2026-06-12-distributed-input-error-propagation.md"
+COMPRESSED_LENGTH_PLAN = ROOT / "docs/plans/2026-06-13-lzo-compressed-length-consistency.md"
+EXTRA_HEADER_LENGTH_PLAN = ROOT / "docs/plans/2026-06-13-lzop-extra-header-length-boundary.md"
+ZERO_PROGRESS_READ_PLAN = ROOT / "docs/plans/2026-06-13-lzop-zero-progress-read.md"
+LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independent-make.md"
+CLOSE_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-15-lzop-close-progress.md"
+READ_DECOMPRESS_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-17-lzop-read-decompress-progress.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -294,6 +300,7 @@ public class LzoIndexEmptyHarness {
     assertCorruptIndexByteCountRejected();
     assertInvalidIndexPositionsRejected();
     assertOversizedIndexBlockSizesRejected();
+    assertCompressedLengthConsistency();
     assertMissingIndexReturnsEmpty();
     assertOpenFailurePropagates();
     assertRenameFailurePropagates();
@@ -341,6 +348,12 @@ public class LzoIndexEmptyHarness {
     assertBlockSizeRejected(LzoCodec.MAX_BLOCK_SIZE + 1, 1, "Uncompressed block size");
     assertBlockSizeRejected(1, 0, "Could not read compressed block size");
     assertBlockSizeRejected(1, LzoCodec.MAX_BLOCK_SIZE + 1, "Compressed block size");
+  }
+
+  private static void assertCompressedLengthConsistency() throws Exception {
+    LzoIndex.validateBlockSizes(8, 8);
+    LzoIndex.validateBlockSizes(8, 4);
+    assertBlockSizeRejected(8, 9, "exceeds uncompressed block size");
   }
 
   private static void assertBlockSizeRejected(int uncompressedBlockSize,
@@ -519,6 +532,498 @@ public class LzoIndexEmptyHarness {
         )
 
 
+def verify_lzop_extra_header_length(failures):
+    if shutil.which("javac") is None or shutil.which("java") is None:
+        failures.append("javac and java must be available for the lzop header smoke check")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor-lzop-header-") as workdir:
+        workdir = Path(workdir)
+        class_dir = workdir / "classes"
+        class_dir.mkdir()
+        package_dir = workdir / "com/hadoop/compression/lzo"
+        package_dir.mkdir(parents=True)
+        codec_stub = package_dir / "LzoCodec.java"
+        harness = package_dir / "LzopHeaderValidationHarness.java"
+        codec_stub.write_text(
+            """
+package com.hadoop.compression.lzo;
+
+public class LzoCodec {
+  public static final int MAX_BLOCK_SIZE = 64 * 1024 * 1024;
+}
+""".lstrip(),
+            encoding="utf-8",
+        )
+        harness.write_text(
+            """
+package com.hadoop.compression.lzo;
+
+import java.io.IOException;
+
+public class LzopHeaderValidationHarness {
+  public static void main(String[] args) throws Exception {
+    assertEquals(0, LzopHeaderValidation.validateExtraFieldLength(0));
+    assertEquals(LzoCodec.MAX_BLOCK_SIZE,
+      LzopHeaderValidation.validateExtraFieldLength(LzoCodec.MAX_BLOCK_SIZE));
+    assertRejected(-1, "must not be negative");
+    assertRejected(LzoCodec.MAX_BLOCK_SIZE + 1, "exceeds max block size");
+  }
+
+  private static void assertEquals(int expected, int actual) {
+    if (expected != actual) {
+      throw new AssertionError("Expected " + expected + " but got " + actual);
+    }
+  }
+
+  private static void assertRejected(int length, String expectedMessage)
+      throws Exception {
+    try {
+      LzopHeaderValidation.validateExtraFieldLength(length);
+      throw new AssertionError("Malformed extra header length was accepted: " + length);
+    } catch (IOException expected) {
+      if (expected.getMessage().indexOf(expectedMessage) < 0) {
+        throw new AssertionError("Unexpected extra header message: " +
+          expected.getMessage());
+      }
+    }
+  }
+}
+""".lstrip(),
+            encoding="utf-8",
+        )
+        validator = ROOT / "src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java"
+        compile_result = subprocess.run(
+            [
+                "javac",
+                "-source",
+                "1.6",
+                "-target",
+                "1.6",
+                "-d",
+                str(class_dir),
+                str(codec_stub),
+                str(validator),
+                str(harness),
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            compile_result.returncode == 0,
+            "Lzop header smoke check must compile: " + compile_result.stderr.strip(),
+            failures,
+        )
+        if compile_result.returncode != 0:
+            return
+
+        run_result = subprocess.run(
+            [
+                "java",
+                "-cp",
+                str(class_dir),
+                "com.hadoop.compression.lzo.LzopHeaderValidationHarness",
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            run_result.returncode == 0,
+            "Lzop header smoke harness must enforce bounded lengths: " +
+            (run_result.stderr or run_result.stdout).strip(),
+            failures,
+        )
+
+
+def verify_lzop_read_progress(failures):
+    if shutil.which("javac") is None or shutil.which("java") is None:
+        failures.append("javac and java must be available for the lzop read-progress smoke check")
+        return
+
+    source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
+    read_fully = extract_java_block(
+        source,
+        r"^\s*private static void readFully\( InputStream in, byte buf\[\],\s*\n\s*int off, int len \) throws IOException, EOFException \{",
+    )
+    if read_fully is None:
+        failures.append("Lzop read-progress smoke check must extract readFully")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor-lzop-read-") as workdir:
+        workdir = Path(workdir)
+        class_dir = workdir / "classes"
+        class_dir.mkdir()
+        harness = workdir / "LzopReadFullyHarness.java"
+        harness.write_text(
+            """
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Arrays;
+
+public class LzopReadFullyHarness {
+""".lstrip() + read_fully + """
+
+  public static void main(String[] args) throws Exception {
+    assertChunkedReadCompletes();
+    assertPrematureEofRejected();
+    assertZeroProgressRejected();
+  }
+
+  private static void assertChunkedReadCompletes() throws Exception {
+    byte[] expected = new byte[] { 1, 2, 3, 4 };
+    byte[] actual = new byte[expected.length];
+    readFully(new OneByteInputStream(expected), actual, 0, actual.length);
+    if (!Arrays.equals(expected, actual)) {
+      throw new AssertionError("Chunked read did not fill the requested buffer");
+    }
+  }
+
+  private static void assertPrematureEofRejected() throws Exception {
+    try {
+      readFully(new OneByteInputStream(new byte[] { 1 }), new byte[2], 0, 2);
+      throw new AssertionError("Premature EOF was accepted");
+    } catch (EOFException expected) {
+      // Expected.
+    }
+  }
+
+  private static void assertZeroProgressRejected() throws Exception {
+    try {
+      readFully(new ZeroProgressInputStream(), new byte[1], 0, 1);
+      throw new AssertionError("Zero-progress read was accepted");
+    } catch (IOException expected) {
+      if (expected.getMessage().indexOf("made no progress") < 0) {
+        throw new AssertionError("Unexpected zero-progress message: " +
+          expected.getMessage());
+      }
+    }
+  }
+
+  private static final class OneByteInputStream extends InputStream {
+    private final byte[] data;
+    private int offset;
+
+    OneByteInputStream(byte[] data) {
+      this.data = data;
+    }
+
+    public int read() {
+      return offset < data.length ? data[offset++] & 0xff : -1;
+    }
+
+    public int read(byte[] buffer, int bufferOffset, int length) {
+      if (offset >= data.length) {
+        return -1;
+      }
+      buffer[bufferOffset] = data[offset++];
+      return 1;
+    }
+  }
+
+  private static final class ZeroProgressInputStream extends InputStream {
+    public int read() {
+      return 0;
+    }
+
+    public int read(byte[] buffer, int offset, int length) {
+      return 0;
+    }
+  }
+}
+""",
+            encoding="utf-8",
+        )
+        compile_result = subprocess.run(
+            [
+                "javac",
+                "-source",
+                "1.6",
+                "-target",
+                "1.6",
+                "-d",
+                str(class_dir),
+                str(harness),
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            compile_result.returncode == 0,
+            "Lzop read-progress smoke check must compile: " + compile_result.stderr.strip(),
+            failures,
+        )
+        if compile_result.returncode != 0:
+            return
+
+        try:
+            run_result = subprocess.run(
+                ["java", "-cp", str(class_dir), "LzopReadFullyHarness"],
+                cwd=str(ROOT),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            failures.append("Lzop read-progress smoke harness must not hang on zero-progress input")
+            return
+        require(
+            run_result.returncode == 0,
+            "Lzop read-progress smoke harness must preserve reads and reject stalls: " +
+            (run_result.stderr or run_result.stdout).strip(),
+            failures,
+        )
+
+
+def verify_lzop_close_progress(failures):
+    if shutil.which("javac") is None or shutil.which("java") is None:
+        failures.append("javac and java must be available for the lzop close-progress smoke check")
+        return
+
+    source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
+    drain_decompressor = extract_java_block(
+        source,
+        r"^\s*static void drainDecompressor\(Decompressor decompressor\) throws IOException \{",
+    )
+    if drain_decompressor is None:
+        failures.append("Lzop close-progress smoke check must extract drainDecompressor")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor-lzop-close-") as workdir:
+        workdir = Path(workdir)
+        class_dir = workdir / "classes"
+        class_dir.mkdir()
+        harness = workdir / "LzopCloseProgressHarness.java"
+        hadoop_jar = ROOT / "lib/hadoop-core-0.20.2-cdh3u1.jar"
+        harness.write_text(
+            """
+import java.io.IOException;
+import org.apache.hadoop.io.compress.Decompressor;
+
+public class LzopCloseProgressHarness {
+""".lstrip() + drain_decompressor + """
+
+  public static void main(String[] args) throws Exception {
+    assertMultiStepDrainCompletes();
+    assertInputRequestStopsDrain();
+    assertZeroProgressCloseRejected();
+  }
+
+  private static void assertMultiStepDrainCompletes() throws Exception {
+    drainDecompressor(new SequenceDecompressor(new int[] { 2, 1 }, false));
+  }
+
+  private static void assertInputRequestStopsDrain() throws Exception {
+    drainDecompressor(new SequenceDecompressor(new int[] { 0 }, true));
+  }
+
+  private static void assertZeroProgressCloseRejected() throws Exception {
+    try {
+      drainDecompressor(new SequenceDecompressor(new int[] { 0 }, false));
+      throw new AssertionError("Zero-progress close drain was accepted");
+    } catch (IOException expected) {
+      if (expected.getMessage().indexOf("made no progress") < 0) {
+        throw new AssertionError("Unexpected close-progress message: " +
+          expected.getMessage());
+      }
+    }
+  }
+
+  private static final class SequenceDecompressor implements Decompressor {
+    private final int[] outputs;
+    private final boolean needsInput;
+    private int offset;
+
+    SequenceDecompressor(int[] outputs, boolean needsInput) {
+      this.outputs = outputs;
+      this.needsInput = needsInput;
+    }
+
+    public void setInput(byte[] b, int off, int len) { }
+    public boolean needsInput() { return needsInput; }
+    public void setDictionary(byte[] b, int off, int len) { }
+    public boolean needsDictionary() { return false; }
+    public boolean finished() { return offset >= outputs.length; }
+    public int decompress(byte[] b, int off, int len) {
+      return outputs[offset++];
+    }
+    public void reset() { offset = 0; }
+    public void end() { }
+  }
+}
+""",
+            encoding="utf-8",
+        )
+        compile_result = subprocess.run(
+            [
+                "javac",
+                "-source",
+                "1.6",
+                "-target",
+                "1.6",
+                "-cp",
+                str(hadoop_jar),
+                "-d",
+                str(class_dir),
+                str(harness),
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            compile_result.returncode == 0,
+            "Lzop close-progress smoke check must compile: " + compile_result.stderr.strip(),
+            failures,
+        )
+        if compile_result.returncode != 0:
+            return
+
+        try:
+            run_result = subprocess.run(
+                ["java", "-cp", str(class_dir) + os.pathsep + str(hadoop_jar),
+                 "LzopCloseProgressHarness"],
+                cwd=str(ROOT),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            failures.append("Lzop close-progress smoke harness must not hang on zero-progress decompression")
+            return
+        require(
+            run_result.returncode == 0,
+            "Lzop close-progress smoke harness must preserve draining and reject stalls: " +
+            (run_result.stderr or run_result.stdout).strip(),
+            failures,
+        )
+
+
+def verify_lzop_read_decompress_progress(failures):
+    if shutil.which("javac") is None or shutil.which("java") is None:
+        failures.append("javac and java must be available for the lzop read-decompress progress smoke check")
+        return
+
+    source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
+    require_input = extract_java_block(
+        source,
+        r"^\s*static void requireInputAfterZeroProgress\(Decompressor decompressor\)",
+    )
+    if require_input is None:
+        failures.append("Lzop read-decompress progress smoke check must extract requireInputAfterZeroProgress")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor-lzop-read-decompress-") as workdir:
+        workdir = Path(workdir)
+        class_dir = workdir / "classes"
+        class_dir.mkdir()
+        harness = workdir / "LzopReadDecompressProgressHarness.java"
+        hadoop_jar = ROOT / "lib/hadoop-core-0.20.2-cdh3u1.jar"
+        harness.write_text(
+            """
+import java.io.IOException;
+import org.apache.hadoop.io.compress.Decompressor;
+
+public class LzopReadDecompressProgressHarness {
+""".lstrip() + require_input + """
+
+  public static void main(String[] args) throws Exception {
+    assertInputRequestAccepted();
+    assertStalledDecompressorRejected();
+  }
+
+  private static void assertInputRequestAccepted() throws Exception {
+    requireInputAfterZeroProgress(new ProgressDecompressor(true));
+  }
+
+  private static void assertStalledDecompressorRejected() throws Exception {
+    try {
+      requireInputAfterZeroProgress(new ProgressDecompressor(false));
+      throw new AssertionError("Stalled read decompressor was accepted");
+    } catch (IOException expected) {
+      if (expected.getMessage().indexOf("made no progress") < 0) {
+        throw new AssertionError("Unexpected read-progress message: " +
+          expected.getMessage());
+      }
+    }
+  }
+
+  private static final class ProgressDecompressor implements Decompressor {
+    private final boolean needsInput;
+
+    ProgressDecompressor(boolean needsInput) {
+      this.needsInput = needsInput;
+    }
+
+    public void setInput(byte[] b, int off, int len) { }
+    public boolean needsInput() { return needsInput; }
+    public void setDictionary(byte[] b, int off, int len) { }
+    public boolean needsDictionary() { return false; }
+    public boolean finished() { return false; }
+    public int decompress(byte[] b, int off, int len) { return 0; }
+    public void reset() { }
+    public void end() { }
+  }
+}
+""",
+            encoding="utf-8",
+        )
+        compile_result = subprocess.run(
+            [
+                "javac",
+                "-source",
+                "1.6",
+                "-target",
+                "1.6",
+                "-cp",
+                str(hadoop_jar),
+                "-d",
+                str(class_dir),
+                str(harness),
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        require(
+            compile_result.returncode == 0,
+            "Lzop read-decompress progress smoke check must compile: " + compile_result.stderr.strip(),
+            failures,
+        )
+        if compile_result.returncode != 0:
+            return
+
+        try:
+            run_result = subprocess.run(
+                ["java", "-cp", str(class_dir) + os.pathsep + str(hadoop_jar),
+                 "LzopReadDecompressProgressHarness"],
+                cwd=str(ROOT),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            failures.append("Lzop read-decompress progress smoke harness must not hang on stalled decompression")
+            return
+        require(
+            run_result.returncode == 0,
+            "Lzop read-decompress progress smoke harness must preserve input requests and reject stalls: " +
+            (run_result.stderr or run_result.stdout).strip(),
+            failures,
+        )
+
+
 def main():
     failures = []
     required_files = [
@@ -540,6 +1045,9 @@ def main():
         "src/native/packageNativeHadoop.sh",
         "src/java/com/hadoop/compression/lzo/LzoCodec.java",
         "src/java/com/hadoop/compression/lzo/LzoIndex.java",
+        "src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java",
+        "scripts/test-lzop-hostile-streams.py",
+        "scripts/test-lzop-hostile-mutations.py",
         "src/test/com/hadoop/compression/lzo/TestLzoCodec.java",
         "docs/plans/2026-06-08-legacy-build-baseline.md",
         "docs/plans/2026-06-08-native-packaging-guard.md",
@@ -554,6 +1062,12 @@ def main():
         "docs/plans/2026-06-10-ci-baseline.md",
         "docs/plans/2026-06-10-distributed-index-rename-guard.md",
         "docs/plans/2026-06-12-distributed-input-error-propagation.md",
+        "docs/plans/2026-06-13-lzo-compressed-length-consistency.md",
+        "docs/plans/2026-06-13-lzop-extra-header-length-boundary.md",
+        "docs/plans/2026-06-13-lzop-zero-progress-read.md",
+        "docs/plans/2026-06-13-location-independent-make.md",
+        "docs/plans/2026-06-15-lzop-close-progress.md",
+        "docs/plans/2026-06-17-lzop-read-decompress-progress.md",
     ]
 
     for relative_path in required_files:
@@ -563,6 +1077,7 @@ def main():
     ivysettings = read("ivy/ivysettings.xml")
     lzo_index_source = read("src/java/com/hadoop/compression/lzo/LzoIndex.java")
     lzop_input_source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
+    lzop_header_validation_source = read("src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java")
     split_record_reader_source = read("src/java/com/hadoop/mapreduce/LzoSplitRecordReader.java")
     index_record_writer_source = read("src/java/com/hadoop/mapreduce/LzoIndexRecordWriter.java")
     distributed_indexer_source = read("src/java/com/hadoop/compression/lzo/DistributedLzoIndexer.java")
@@ -578,6 +1093,12 @@ def main():
     ci_plan = CI_PLAN.read_text(encoding="utf-8") if CI_PLAN.exists() else ""
     record_writer_rename_plan = RECORD_WRITER_RENAME_PLAN.read_text(encoding="utf-8") if RECORD_WRITER_RENAME_PLAN.exists() else ""
     input_traversal_plan = INPUT_TRAVERSAL_PLAN.read_text(encoding="utf-8") if INPUT_TRAVERSAL_PLAN.exists() else ""
+    compressed_length_plan = COMPRESSED_LENGTH_PLAN.read_text(encoding="utf-8") if COMPRESSED_LENGTH_PLAN.exists() else ""
+    extra_header_length_plan = EXTRA_HEADER_LENGTH_PLAN.read_text(encoding="utf-8") if EXTRA_HEADER_LENGTH_PLAN.exists() else ""
+    zero_progress_read_plan = ZERO_PROGRESS_READ_PLAN.read_text(encoding="utf-8") if ZERO_PROGRESS_READ_PLAN.exists() else ""
+    location_independent_make_plan = LOCATION_INDEPENDENT_MAKE_PLAN.read_text(encoding="utf-8") if LOCATION_INDEPENDENT_MAKE_PLAN.exists() else ""
+    close_progress_plan = CLOSE_PROGRESS_PLAN.read_text(encoding="utf-8") if CLOSE_PROGRESS_PLAN.exists() else ""
+    read_decompress_progress_plan = READ_DECOMPRESS_PROGRESS_PLAN.read_text(encoding="utf-8") if READ_DECOMPRESS_PROGRESS_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -620,6 +1141,10 @@ def main():
             failures)
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, build, and check gate targets",
+            failures)
+    require("ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))" in makefile and
+            '@python3 "$(ROOT)/scripts/check-baseline.py"' in makefile,
+            "Makefile must invoke the baseline checker through the loaded repository root",
             failures)
     workflow_lines = ci_workflow.splitlines()
     require(workflow_lines.count("permissions:") == 1 and
@@ -698,11 +1223,95 @@ def main():
     require("assertOversizedIndexBlockSizesRejected" in Path(__file__).read_text(encoding="utf-8"),
             "LzoIndex smoke check must cover malformed LZO block sizes",
             failures)
-    require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source and "compressedLen <= 0" in lzop_input_source and "compressedLen > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source,
+    require("compressedBlockSize > uncompressedBlockSize" in lzo_index_source,
+            "LzoIndex.createIndex must reject compressed lengths larger than the declared uncompressed length",
+            failures)
+    checker_source = Path(__file__).read_text(encoding="utf-8")
+    bounded_timeout_count = len(re.findall(
+        r"^\s*timeout=5,\s*$", checker_source, flags=re.MULTILINE
+    ))
+    require(checker_source.count("assertCompressedLengthConsistency();") == 2
+            and "private static void assertCompressedLengthConsistency()" in checker_source,
+            "LzoIndex smoke check must cover compressed-length consistency",
+            failures)
+    require("nextBlockSize > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source and "compressedLen <= 0" in lzop_input_source and "compressedLen > LzoCodec.MAX_BLOCK_SIZE" in lzop_input_source,
             "LzopInputStream must reject invalid compressed and uncompressed block sizes",
+            failures)
+    require("compressedLen > uncompressedBlockSize" in lzop_input_source and "compressedLen == uncompressedBlockSize" in lzop_input_source,
+            "LzopInputStream must reject impossible compressed lengths and only treat equal lengths as uncompressed",
+            failures)
+    require("extraFieldLength < 0" in lzop_header_validation_source and
+            "extraFieldLength > LzoCodec.MAX_BLOCK_SIZE" in lzop_header_validation_source and
+            "LzopHeaderValidation.validateExtraFieldLength(hitem)" in lzop_input_source and
+            "readHeaderBytes(in, extraFieldLength, adler, crc32)" in lzop_input_source and
+            "new byte[extraFieldLength]" not in lzop_input_source,
+            "LzopInputStream must bound and stream extra-header fields",
+            failures)
+    hostile_stream_test = read("scripts/test-lzop-hostile-streams.py")
+    hostile_mutation_test = read("scripts/test-lzop-hostile-mutations.py")
+    require("scripts/test-lzop-hostile-streams.py" in makefile and
+            "scripts/test-lzop-hostile-mutations.py" in makefile and
+            all(name in hostile_stream_test for name in (
+                "rejectsPartialBlockTrailer",
+                "rejectsDeclaredBlockOverrun",
+                "rejectsUnknownHighHeaderFlags",
+                "streamsHeaderBytesWithoutLargeAllocation",
+                "stopsCloseDrainWhenMoreInputIsRequired",
+                "rejectsTrueCloseDrainStalls",
+            )),
+            "Make check must execute the hostile Lzop stream boundary suite",
+            failures)
+    require("MUTATIONS = (" in hostile_mutation_test and
+            "Rejected %d hostile Lzop mutations." in hostile_mutation_test,
+            "Make check must execute mutation-sensitive Lzop stream proofs",
+            failures)
+    require("verify_lzo_index_empty_alignment(failures)\n    verify_lzop_extra_header_length(failures)" in checker_source and
+            "assertRejected(-1, \"must not be negative\")" in checker_source and
+            checker_source.count("assertRejected(LzoCodec.MAX_BLOCK_SIZE + 1") == 2,
+            "Lzop extra-header smoke coverage must execute both rejected boundaries",
+            failures)
+    require("if ( ret == 0 )" in lzop_input_source and
+            "Input stream made no progress while reading" in lzop_input_source,
+            "LzopInputStream.readFully must reject zero-progress reads",
+            failures)
+    require(checker_source.count("assertZeroProgressRejected();") == 2 and
+            bounded_timeout_count == 3 and
+            "verify_lzop_read_progress(failures)" in checker_source,
+            "Lzop read-progress smoke coverage must execute with a bounded timeout",
+            failures)
+    require("static void drainDecompressor(Decompressor decompressor)" in lzop_input_source and
+            "decompressed <= 0" in lzop_input_source and
+            "Decompressor made no progress while closing" in lzop_input_source,
+            "LzopInputStream close draining must reject zero progress",
+            failures)
+    require("IOException closeFailure = null" in lzop_input_source and
+            "drainDecompressor(decompressor);" in lzop_input_source and
+            "CodecPool.returnDecompressor(decompressor);" in lzop_input_source and
+            "throw closeFailure;" in lzop_input_source,
+            "LzopInputStream close failures must preserve stream and decompressor cleanup",
+            failures)
+    require(checker_source.count("assertMultiStepDrainCompletes();") == 2 and
+            checker_source.count("assertZeroProgressCloseRejected();") == 2 and
+            "verify_lzop_close_progress(failures)" in checker_source and
+            bounded_timeout_count == 3,
+            "Lzop close-progress smoke coverage must execute both scenarios with a bounded timeout",
+            failures)
+    require("static void requireInputAfterZeroProgress(Decompressor decompressor)" in lzop_input_source and
+            "Decompressor made no progress while reading" in lzop_input_source and
+            "requireInputAfterZeroProgress(decompressor);" in lzop_input_source,
+            "LzopInputStream normal reads must reject stalled decompression",
+            failures)
+    require(checker_source.count("assertInputRequestAccepted();") == 2 and
+            checker_source.count("assertStalledDecompressorRejected();") == 2 and
+            "verify_lzop_read_decompress_progress(failures)" in checker_source and
+            bounded_timeout_count == 3,
+            "Lzop read-decompress progress coverage must execute both scenarios with a bounded timeout",
             failures)
     require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source and "compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source,
             "LzoSplitRecordReader must reject oversized LZO block sizes before seeking",
+            failures)
+    require("compressedBlockSize > uncompressedBlockSize" in split_record_reader_source,
+            "LzoSplitRecordReader must reject impossible compressed lengths before seeking",
             failures)
     require("import java.io.FileNotFoundException;" in lzo_index_source and "catch (FileNotFoundException fileNotFound)" in lzo_index_source,
             "LzoIndex.readIndex must only fall back when the index file is missing",
@@ -737,6 +1346,10 @@ def main():
             "DistributedLzoIndexer entry points must preserve traversal failure propagation",
             failures)
     verify_lzo_index_empty_alignment(failures)
+    verify_lzop_extra_header_length(failures)
+    verify_lzop_read_progress(failures)
+    verify_lzop_close_progress(failures)
+    verify_lzop_read_decompress_progress(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
             ".gitignore must exclude generated build products and local machine files",
@@ -756,6 +1369,12 @@ def main():
     require("oversized LZO block sizes" in readme,
             "README must document the oversized LZO block-size guard",
             failures)
+    require("lengths larger than their declared uncompressed lengths" in readme,
+            "README must document compressed-length consistency validation",
+            failures)
+    require("extra-header fields are bounded" in readme,
+            "README must document lzop extra-header length validation",
+            failures)
     require("index open failures" in readme,
             "README must document the LZO index open-failure guard",
             failures)
@@ -764,6 +1383,9 @@ def main():
             failures)
     require("distributed input traversal failures" in readme,
             "README must document distributed input traversal failure propagation",
+            failures)
+    require("absolute Makefile path" in readme and "any working directory" in readme,
+            "README must document location-independent Make verification",
             failures)
     require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "malformed index positions" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision and "index rename failures" in vision,
             "VISION must describe the current static build baseline",
@@ -774,11 +1396,23 @@ def main():
     require("distributed input traversal failures" in vision,
             "VISION must preserve distributed traversal failure propagation",
             failures)
+    require("impossible compressed" in vision and "length relations" in vision,
+            "VISION must describe compressed-length consistency validation",
+            failures)
+    require("extra-header streaming" in vision,
+            "VISION must describe bounded lzop extra-header streaming",
+            failures)
     require("Maven Central" in security and "HTTPS" in security and "oversized block sizes" in security and "malformed index positions" in security,
             "SECURITY must describe build dependency download expectations",
             failures)
     require("GitHub Actions" in security and "make check" in security,
             "SECURITY must describe the hosted CI verification boundary",
+            failures)
+    require("impossible compressed-length" in security,
+            "SECURITY must describe the malformed compressed-length boundary",
+            failures)
+    require("bounded streaming extra-header fields" in security,
+            "SECURITY must describe the lzop extra-header boundary",
             failures)
     require("HTTPS" in changes and "make lint" in changes and "make test" in changes and "make build" in changes and "make check" in changes and "build revision" in changes and "empty-index" in changes and "malformed index byte counts" in changes and "malformed index positions" in changes and "oversized LZO block sizes" in changes and "index open failures" in changes and "index rename failures" in changes,
             "CHANGES must record the legacy build baseline",
@@ -788,6 +1422,16 @@ def main():
             failures)
     require("distributed input traversal failures" in changes,
             "CHANGES must record distributed traversal failure propagation",
+            failures)
+    require("compressed LZO block lengths larger than their declared" in changes,
+            "CHANGES must record compressed-length consistency validation",
+            failures)
+    require("Bounded lzop extra-header field allocation" in changes,
+            "CHANGES must record lzop extra-header allocation validation",
+            failures)
+    require("Make verification target derive the checkout root" in changes and
+            "external directories" in changes,
+            "CHANGES must record location-independent Make verification",
             failures)
     require("status: completed" in plan,
             "plan must be marked completed",
@@ -822,8 +1466,204 @@ def main():
     require("status: completed" in record_writer_rename_plan.lower() and "make check" in record_writer_rename_plan,
             "distributed index rename plan must be marked completed and record verification",
             failures)
-    require("status: completed" in input_traversal_plan.lower() and "make check" in input_traversal_plan,
-            "distributed input traversal plan must be marked completed and record verification",
+    input_traversal_statuses = re.findall(
+        r"^status: .+$", input_traversal_plan, flags=re.MULTILINE
+    )
+    input_traversal_sections = input_traversal_plan.split(
+        "## Verification Completed\n", 1
+    )
+    input_traversal_verification = (
+        input_traversal_sections[1] if len(input_traversal_sections) == 2 else ""
+    )
+    input_traversal_required_evidence = (
+        "All four Make gates",
+        "push run `27393718908`",
+        "pull-request run `27393721234`",
+        "push run `27393737055`",
+        "CodeQL setup run `27402321777`",
+        "mutation restoring the `walkPath` exception-swallowing block",
+    )
+    require(input_traversal_statuses == ["status: completed"]
+            and all(item in input_traversal_verification for item in input_traversal_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", input_traversal_verification, re.IGNORECASE) is None,
+            "distributed input traversal plan must record completed status and actual verification",
+            failures)
+    compressed_length_statuses = re.findall(
+        r"^status: .+$", compressed_length_plan, flags=re.MULTILINE
+    )
+    compressed_length_sections = compressed_length_plan.split(
+        "## Verification Completed\n", 1
+    )
+    compressed_length_verification = (
+        compressed_length_sections[1]
+        if len(compressed_length_sections) == 2 else ""
+    )
+    compressed_length_required_evidence = (
+        "All four Make gates",
+        "assertCompressedLengthConsistency",
+        "python3 -m py_compile scripts/check-baseline.py",
+        "git diff --check",
+        "Seven isolated hostile mutations",
+    )
+    require(compressed_length_statuses == ["status: completed"]
+            and all(item in compressed_length_verification for item in compressed_length_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", compressed_length_verification, re.IGNORECASE) is None,
+            "compressed-length consistency plan must record completed status and actual verification",
+            failures)
+    extra_header_length_statuses = re.findall(
+        r"^status: .+$", extra_header_length_plan, flags=re.MULTILINE
+    )
+    extra_header_length_sections = extra_header_length_plan.split(
+        "## Verification Completed\n", 1
+    )
+    extra_header_length_verification = (
+        extra_header_length_sections[1]
+        if len(extra_header_length_sections) == 2 else ""
+    )
+    extra_header_length_required_evidence = (
+        "focused lzop extra-header smoke harness passed",
+        "All four Make gates passed",
+        "python3 -m py_compile scripts/check-baseline.py",
+        "Validator-call removal failed",
+        "Negative-bound removal and upper-bound removal",
+        "Harness-invocation removal failed",
+        "hosted pull-request and CodeQL snapshot",
+    )
+    require(extra_header_length_statuses == ["status: completed"]
+            and all(item in extra_header_length_verification for item in extra_header_length_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", extra_header_length_verification, re.IGNORECASE) is None,
+            "lzop extra-header plan must record completed status and actual verification",
+            failures)
+    zero_progress_read_statuses = re.findall(
+        r"^status: .+$", zero_progress_read_plan, flags=re.MULTILINE
+    )
+    zero_progress_read_sections = zero_progress_read_plan.split(
+        "## Verification Completed\n", 1
+    )
+    zero_progress_read_verification = (
+        zero_progress_read_sections[1]
+        if len(zero_progress_read_sections) == 2 else ""
+    )
+    zero_progress_read_required_evidence = (
+        "focused Lzop read-progress smoke harness passed",
+        "All four Make gates passed",
+        "python3 -m py_compile scripts/check-baseline.py",
+        "zero-progress rejection removal mutation failed",
+        "harness-scenario removal mutation failed",
+        "subprocess-timeout removal mutation failed",
+        "hosted pull-request and CodeQL snapshot",
+    )
+    require(zero_progress_read_statuses == ["status: completed"]
+            and all(item in zero_progress_read_verification for item in zero_progress_read_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", zero_progress_read_verification, re.IGNORECASE) is None,
+            "lzop zero-progress plan must record completed status and actual verification",
+            failures)
+    location_independent_make_statuses = re.findall(
+        r"^status: .+$", location_independent_make_plan, flags=re.MULTILINE
+    )
+    location_independent_make_sections = location_independent_make_plan.split(
+        "## Verification Completed\n", 1
+    )
+    location_independent_make_verification = (
+        location_independent_make_sections[1]
+        if len(location_independent_make_sections) == 2 else ""
+    )
+    location_independent_make_required_evidence = (
+        "Root and external-directory Make gates passed",
+        "root-derivation mutation failed",
+        "checker-invocation mutation failed",
+        "plan-status mutation failed",
+        "plan-evidence mutation failed",
+        "documentation mutation failed",
+    )
+    require(location_independent_make_statuses == ["status: completed"]
+            and all(item in location_independent_make_verification
+                    for item in location_independent_make_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          location_independent_make_verification,
+                          re.IGNORECASE) is None,
+            "location-independent Make plan must record completed status and actual verification",
+            failures)
+    require("zero bytes" in read("AGENTS.md") and
+            "Positive-length Lzop reads that return zero bytes fail closed" in read("README.md") and
+            "zero-byte result must not create an unbounded parsing loop" in read("SECURITY.md") and
+            "Reject zero-progress positive-length Lzop reads" in read("VISION.md") and
+            "Rejected zero-progress positive-length Lzop reads" in read("CHANGES.md"),
+            "Project guidance must document zero-progress Lzop read rejection",
+            failures)
+    close_progress_guidance = "Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup."
+    require(all(close_progress_guidance in read(path) for path in
+                ["AGENTS.md", "README.md", "SECURITY.md", "VISION.md", "CHANGES.md"]),
+            "Project guidance must document zero-progress Lzop close rejection",
+            failures)
+    read_decompress_progress_guidance = "Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads."
+    require(all(read_decompress_progress_guidance in read(path) for path in
+                ["AGENTS.md", "README.md", "SECURITY.md", "VISION.md", "CHANGES.md"]),
+            "Project guidance must document zero-progress Lzop read-decompress rejection",
+            failures)
+    close_progress_statuses = re.findall(
+        r"^status: .+$", close_progress_plan, flags=re.MULTILINE
+    )
+    close_progress_sections = close_progress_plan.split(
+        "## Verification Completed\n", 1
+    )
+    close_progress_verification = (
+        close_progress_sections[1]
+        if len(close_progress_sections) == 2 else ""
+    )
+    close_progress_required_evidence = (
+        "pre-fix close hang reproduced",
+        "focused Lzop close-progress smoke harness passed",
+        "All four Make gates passed",
+        "python3 -m py_compile scripts/check-baseline.py",
+        "progress-rejection removal mutation failed",
+        "successful-drain scenario removal mutation failed",
+        "cleanup-preservation mutation failed",
+        "subprocess-timeout removal mutation failed",
+        "plan-evidence removal mutation failed",
+        "hosted pull-request and security-alert snapshot",
+    )
+    require(close_progress_statuses == ["status: completed"]
+            and all(item in close_progress_verification
+                    for item in close_progress_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          close_progress_verification,
+                          re.IGNORECASE) is None,
+            "lzop close-progress plan must record completed status and actual verification",
+            failures)
+    read_decompress_progress_statuses = re.findall(
+        r"^status: .+$", read_decompress_progress_plan, flags=re.MULTILINE
+    )
+    read_decompress_progress_sections = read_decompress_progress_plan.split(
+        "## Verification Completed\n", 1
+    )
+    read_decompress_progress_verification = (
+        read_decompress_progress_sections[1]
+        if len(read_decompress_progress_sections) == 2 else ""
+    )
+    normalized_read_decompress_progress_verification = " ".join(
+        read_decompress_progress_verification.split()
+    )
+    read_decompress_progress_required_evidence = (
+        "pre-fix read hang reproduced",
+        "focused Lzop read-decompress progress smoke harness passed",
+        "All four Make gates passed separately",
+        "absolute Makefile check passed from an external directory",
+        "Six isolated mutations were rejected",
+        "no actionable findings",
+        "Both canonical implementation-head checks passed",
+        "push run 27664412273",
+        "pull-request run 27664415741",
+        "zero open code-scanning, Dependabot, and secret-scanning alerts",
+        "Ant, native LZO libraries, a Hadoop cluster, and production compressed corpora were not available or exercised",
+    )
+    require(read_decompress_progress_statuses == ["status: completed"]
+            and all(item in normalized_read_decompress_progress_verification
+                    for item in read_decompress_progress_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run|not yet)\b",
+                          read_decompress_progress_verification,
+                          re.IGNORECASE) is None,
+            "lzop read-decompress progress plan must record completed status and actual verification",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,

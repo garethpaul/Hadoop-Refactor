@@ -110,7 +110,19 @@ public class LzopCodec extends LzoCodec {
   public CompressionInputStream createInputStream(InputStream in) throws IOException {
     // get a decompressor from a pool which will be returned to the pool
     // when LzoInputStream is closed
-    return createInputStream(in, CodecPool.getDecompressor(this));
+    Decompressor decompressor = CodecPool.getDecompressor(this);
+    try {
+      return createInputStream(in, decompressor);
+    } catch (IOException e) {
+      CodecPool.returnDecompressor(decompressor);
+      throw e;
+    } catch (RuntimeException e) {
+      CodecPool.returnDecompressor(decompressor);
+      throw e;
+    } catch (Error e) {
+      CodecPool.returnDecompressor(decompressor);
+      throw e;
+    }
   }
 
   @Override

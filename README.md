@@ -77,9 +77,21 @@ so quoted path handling stays covered. The Java smoke harness also checks
 requiring the full Ant test path. It also checks malformed index positions so
 negative or non-increasing block offsets are rejected before split alignment
 uses them. It also checks oversized LZO block sizes so corrupt streams are
-rejected before indexers or split readers seek across the file. Missing index
-files fall back to unsplittable reads while non-missing index open failures
-still surface to callers. Temporary index rename failures are surfaced and
+rejected before indexers or split readers seek across the file. Compressed
+lengths larger than their declared uncompressed lengths are also rejected
+before checksum selection, allocation, or seeking. File-controlled lzop
+extra-header fields are bounded and checksum-validated through a fixed-size
+streaming buffer rather than a file-sized allocation.
+Block parsing also rejects missing or partial terminators, unknown header
+flags, decompressor output beyond the declared size, and final checksum
+mismatches before accepting end-of-stream.
+Positive-length Lzop reads that return zero bytes fail closed instead of
+spinning indefinitely.
+Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
+Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads.
+Missing index files fall back to unsplittable reads
+while non-missing index open failures still surface to callers. Temporary index
+rename failures are surfaced and
 cleaned up so failed index publication cannot look successful. The same checked
 publication path is used by direct and distributed index generation.
 Distributed input traversal failures also propagate to the command instead of
@@ -118,6 +130,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Run `make lint`, `make test`, `make build`, and `make check` before pushing
   changes to build metadata, native scripts, Java source, tests, or dependency
   download configuration.
+- Every Make verification target derives the checkout root from the loaded
+  Makefile, so an absolute Makefile path works from any working directory.
 - See `docs/plans/2026-06-08-native-packaging-guard.md` for the current native packaging guardrail.
 - See `docs/plans/2026-06-08-build-revision-helper-guard.md` for the current build revision helper guardrail.
 - See `docs/plans/2026-06-09-lzo-index-open-failure-guard.md` for the LZO index open failures guardrail.
@@ -135,6 +149,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   target guardrails.
 - See `docs/plans/2026-06-10-ci-baseline.md` for the hosted GitHub Actions
   baseline.
+- See `docs/plans/2026-06-15-lzop-close-progress.md` for bounded close-time
+  decompressor draining.
 
 ## Contributing
 

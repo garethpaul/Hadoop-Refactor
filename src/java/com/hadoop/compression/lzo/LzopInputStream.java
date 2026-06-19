@@ -48,6 +48,7 @@ public class LzopInputStream extends BlockDecompressorStream {
   private int noUncompressedBytes = 0;
   private int noCompressedBytes = 0;
   private int uncompressedBlockSize = 0;
+  private boolean closed = false;
 
   public LzopInputStream(InputStream in, Decompressor decompressor,
       int bufferSize) throws IOException {
@@ -74,6 +75,10 @@ public class LzopInputStream extends BlockDecompressorStream {
       if ( ret < 0 ) {
         throw new EOFException("Premature EOF from inputStream");
       }
+      if ( ret == 0 ) {
+        throw new IOException("Input stream made no progress while reading " +
+          len + " bytes");
+      }
       toRead -= ret;
       off += ret;
     }
@@ -91,6 +96,53 @@ public class LzopInputStream extends BlockDecompressorStream {
     ret    |= (0xFF & buf[2]) << 8;
     ret    |= (0xFF & buf[3]);
     return (len > 3) ? ret : (ret >>> (8 * (4 - len)));
+  }
+
+  static long readNextBlockSize(InputStream in, byte[] blockSizeBuffer)
+  throws IOException {
+    readFully(in, blockSizeBuffer, 0, 4);
+    return ((long)(0xFF & blockSizeBuffer[0]) << 24)
+      | ((long)(0xFF & blockSizeBuffer[1]) << 16)
+      | ((long)(0xFF & blockSizeBuffer[2]) << 8)
+      | (long)(0xFF & blockSizeBuffer[3]);
+  }
+
+  static void validateDecompressedLength(int decompressed, int consumed,
+      int expected) throws IOException {
+    if (decompressed < 0) {
+      throw new IOException("Decompressor returned a negative byte count");
+    }
+    if (consumed > expected - decompressed) {
+      throw new IOException("Decompressed block exceeds declared length " +
+        expected + " (probably corrupt file)");
+    }
+  }
+
+  static int limitDecompressionLength(int requested, int consumed, int expected)
+  throws IOException {
+    if (consumed < 0 || consumed > expected) {
+      throw new IOException("Invalid decompressed block position " + consumed);
+    }
+    return Math.min(requested, expected - consumed);
+  }
+
+  static void validateHeaderFlags(int flags) throws IOException {
+    if ((flags & ~0x00003FFF) != 0) {
+      throw new IOException("Unknown flags in header");
+    }
+  }
+
+  static void readHeaderBytes(InputStream in, int len, Adler32 adler,
+      CRC32 crc32) throws IOException {
+    byte[] headerBuffer = new byte[Math.min(8192, Math.max(1, len))];
+    int remaining = len;
+    while (remaining > 0) {
+      int chunk = Math.min(headerBuffer.length, remaining);
+      readFully(in, headerBuffer, 0, chunk);
+      adler.update(headerBuffer, 0, chunk);
+      crc32.update(headerBuffer, 0, chunk);
+      remaining -= chunk;
+    }
   }
 
   /**
@@ -145,6 +197,7 @@ public class LzopInputStream extends BlockDecompressorStream {
 
     // flags
     hitem = readHeaderItem(in, buf, 4, adler, crc32);
+    validateHeaderFlags(hitem);
     try {
       for (DChecksum f : dflags) {
         if (0 == (f.getHeaderMask() & hitem)) {
@@ -174,9 +227,6 @@ public class LzopInputStream extends BlockDecompressorStream {
     if (0 != (hitem & 0x800)) {                     // F_H_FILTER
       throw new IOException("lzop filter not supported");
     }
-    if (0 != (hitem & 0x000FC000)) {                // F_RESERVED
-      throw new IOException("Unknown flags in header");
-    }
     // known !F_H_FILTER, so no optional block
 
     readHeaderItem(in, buf, 4, adler, crc32); // ignore mode
@@ -200,7 +250,9 @@ public class LzopInputStream extends BlockDecompressorStream {
       adler.reset();
       crc32.reset();
       hitem = readHeaderItem(in, buf, 4, adler, crc32);
-      readHeaderItem(in, new byte[hitem], hitem, adler, crc32);
+      int extraFieldLength =
+        LzopHeaderValidation.validateExtraFieldLength(hitem);
+      readHeaderBytes(in, extraFieldLength, adler, crc32);
       checksum = (int)(useCRC32 ? crc32.getValue() : adler.getValue());
       if (checksum != readHeaderItem(in, buf, 4, adler, crc32)) {
         throw new IOException("Invalid checksum for extra header field");
@@ -232,52 +284,59 @@ public class LzopInputStream extends BlockDecompressorStream {
   protected int decompress(byte[] b, int off, int len) throws IOException {
     // Check if we are the beginning of a block
     if (noUncompressedBytes == uncompressedBlockSize) {
-      // Get original data size
-      try {
-        byte[] tempBuf = new byte[4];
-        uncompressedBlockSize =  readInt(in, tempBuf, 4);
-        noCompressedBytes += 4;
-      } catch (EOFException e) {
-        return -1;
+      if (uncompressedBlockSize > 0) {
+        verifyChecksums();
       }
-      if (uncompressedBlockSize == 0) {
+      // Get original data size
+      byte[] tempBuf = new byte[4];
+      long nextBlockSize = readNextBlockSize(in, tempBuf);
+      noCompressedBytes += 4;
+      if (nextBlockSize == 0) {
         eof = true;
         return -1;
-      } else if (uncompressedBlockSize < 0) {
-        throw new EOFException("Could not read uncompressed block size");
-      } else if (uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE) {
-        throw new IOException("Uncompressed length " + uncompressedBlockSize +
+      } else if (nextBlockSize > LzoCodec.MAX_BLOCK_SIZE) {
+        throw new IOException("Uncompressed length " + nextBlockSize +
           " exceeds max block size " + LzoCodec.MAX_BLOCK_SIZE +
           " (probably corrupt file)");
       }
+      uncompressedBlockSize = (int)nextBlockSize;
       noUncompressedBytes = 0;
     }
 
     int n = 0;
-    while ((n = decompressor.decompress(b, off, len)) == 0) {
+    int limitedLength = limitDecompressionLength(len, noUncompressedBytes,
+      uncompressedBlockSize);
+    while ((n = decompressor.decompress(b, off, limitedLength)) == 0) {
       if (decompressor.finished() || decompressor.needsDictionary()) {
         if (noUncompressedBytes >= uncompressedBlockSize) {
           eof = true;
           return -1;
         }
       }
-      if (decompressor.needsInput()) {
-        try {
-          getCompressedData();
-        } catch (EOFException e) {
-          eof = true;
-          return -1;
-        } catch (IOException e) {
-          LOG.warn("IOException in getCompressedData; likely LZO corruption.", e);
-          throw e;
-        }
+      requireInputAfterZeroProgress(decompressor);
+      try {
+        getCompressedData();
+      } catch (EOFException e) {
+        eof = true;
+        return -1;
+      } catch (IOException e) {
+        LOG.warn("IOException in getCompressedData; likely LZO corruption.", e);
+        throw e;
       }
     }
 
     // Note the no. of decompressed bytes read from 'current' block
+    validateDecompressedLength(n, noUncompressedBytes, uncompressedBlockSize);
     noUncompressedBytes += n;
 
     return n;
+  }
+
+  static void requireInputAfterZeroProgress(Decompressor decompressor)
+  throws IOException {
+    if (!decompressor.needsInput()) {
+      throw new IOException("Decompressor made no progress while reading");
+    }
   }
 
   /**
@@ -286,7 +345,6 @@ public class LzopInputStream extends BlockDecompressorStream {
   @Override
   protected void getCompressedData() throws IOException {
     checkStream();
-    verifyChecksums();
 
     // Get the size of the compressed chunk
     int compressedLen = readInt(in, buf, 4);
@@ -303,12 +361,18 @@ public class LzopInputStream extends BlockDecompressorStream {
         " (probably corrupt file)");
     }
 
+    if (compressedLen > uncompressedBlockSize) {
+      throw new IOException("Compressed length " + compressedLen +
+        " exceeds uncompressed length " + uncompressedBlockSize +
+        " (probably corrupt file)");
+    }
+
     LzopDecompressor ldecompressor = (LzopDecompressor)decompressor;
     // If the lzo compressor compresses a block of data, and that compression
     // actually makes the block larger, it writes the block as uncompressed instead.
     // In this case, the compressed size and the uncompressed size in the header
     // are identical, and there is NO compressed checksum written.
-    ldecompressor.setCurrentBlockUncompressed(compressedLen >= uncompressedBlockSize);
+    ldecompressor.setCurrentBlockUncompressed(compressedLen == uncompressedBlockSize);
 
     for (DChecksum chk : dcheck.keySet()) {
       dcheck.put(chk, readInt(in, buf, 4));
@@ -339,22 +403,52 @@ public class LzopInputStream extends BlockDecompressorStream {
     return noCompressedBytes;
   }
 
+  static void drainDecompressor(Decompressor decompressor) throws IOException {
+    byte[] closeBuffer = new byte[4096];
+    while (!decompressor.finished()) {
+      int decompressed = decompressor.decompress(closeBuffer, 0,
+        closeBuffer.length);
+      if (decompressed <= 0) {
+        if (decompressor.needsInput()) {
+          return;
+        }
+        throw new IOException("Decompressor made no progress while closing " +
+          "LzopInputStream");
+      }
+    }
+  }
+
   @Override
   public void close() throws IOException {
-    byte[] b = new byte[4096];
-    while (!decompressor.finished()) {
-      decompressor.decompress(b, 0, b.length);
+    if (closed) {
+      return;
     }
-    super.close();
+    closed = true;
+    IOException closeFailure = null;
     try {
-      verifyChecksums();
+      drainDecompressor(decompressor);
     } catch (IOException e) {
-      // LZO requires that each file ends with 4 trailing zeroes.  If we are here,
-      // the file didn't.  It's not critical, though, so log and eat it in this case.
-      LOG.warn("Incorrect LZO file format: file did not end with four trailing zeroes.", e);
+      closeFailure = e;
+    }
+    try {
+      super.close();
+    } catch (IOException e) {
+      if (closeFailure == null) {
+        closeFailure = e;
+      }
+    }
+    try {
+      if (closeFailure == null) {
+        verifyChecksums();
+      }
+    } catch (IOException e) {
+      closeFailure = e;
     } finally{
       //return the decompressor to the pool, the function itself handles null.
       CodecPool.returnDecompressor(decompressor);
+    }
+    if (closeFailure != null) {
+      throw closeFailure;
     }
   }
 }
