@@ -17,6 +17,8 @@ status: completed
 - The complete production Java tree compiled with `javac -source 1.6 -target
   1.6` against the checked-in Hadoop jar and commons-logging API.
 - Python compilation and `git diff --check` passed.
+- The portable baseline now rejects a missing plan or any regression from the
+  completed status.
 - GitHub Actions checks and CodeQL analysis for Actions, C/C++, Java/Kotlin,
   and Python passed on pull request 13.
 - `codex review --base origin/master` was attempted and skipped after repeated
