@@ -1261,6 +1261,8 @@ def main():
                 "streamsHeaderBytesWithoutLargeAllocation",
                 "stopsCloseDrainWhenMoreInputIsRequired",
                 "rejectsTrueCloseDrainStalls",
+                "acceptsObservableCompressionProgress",
+                "rejectsUnchangedCompressionState",
             )),
             "Make check must execute the hostile Lzop stream boundary suite",
             failures)
@@ -1300,6 +1302,11 @@ def main():
             "CodecPool.returnCompressor(compressor);" in lzop_output_source and
             "throw closeFailure;" in lzop_output_source,
             "LzopOutputStream close failures must preserve output and compressor cleanup",
+            failures)
+    require("static void validateCompressionProgress(" in lzop_output_source and
+            "Compressor made no progress" in lzop_output_source and
+            "validateCompressionProgress(bytesReadBefore, bytesWrittenBefore," in lzop_output_source,
+            "LzopOutputStream compression must reject unchanged-state stalls",
             failures)
     require(checker_source.count("assertMultiStepDrainCompletes();") == 2 and
             checker_source.count("assertZeroProgressCloseRejected();") == 2 and

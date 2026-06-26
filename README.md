@@ -90,6 +90,8 @@ spinning indefinitely.
 Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
 Lzop output close independently cleans up its data and index streams and
 returns the pooled compressor while preserving the first IOException.
+Lzop output compression rejects unchanged compressor state instead of allowing
+write or finish loops to spin indefinitely.
 Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads.
 Missing index files fall back to unsplittable reads
 while non-missing index open failures still surface to callers. Temporary index

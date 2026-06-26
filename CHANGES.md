@@ -1,5 +1,21 @@
 # Changes
 
+## 2026-06-26 13:40 UTC - P1 - output compression progress
+
+- Summary: reject zero-byte Lzop compression calls that leave byte counts,
+  input demand, and completion state unchanged, preventing unbounded write and
+  finish loops while preserving legitimate state-only progress.
+- Files: `LzopOutputStream.java`, hostile-stream and mutation harnesses,
+  baseline contracts, maintenance docs, and the implementation plan.
+- Tests: executable Java 6-compatible progress cases, production call-site
+  mutation rejection, `make check`, source compilation, and hosted CI.
+- Findings: the legacy output path inherited an unbounded compressor loop and
+  had no executable small/uncompressible-output progress contract.
+- Blockers: full native LZO/Ant integration remains dependent on the documented
+  Hadoop 0.20/CDH3-era toolchain.
+- Next action: refresh small/uncompressible file and index-generation coverage
+  without combining it with native or Hadoop API modernization.
+
 ## 2026-06-26 01:48 UTC - P1 - output close cleanup
 
 - Made `LzopOutputStream.close()` idempotent before finalization and preserved
