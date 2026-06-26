@@ -7,12 +7,14 @@
   finish loops while preserving legitimate state-only progress.
 - Files: `LzopOutputStream.java`, hostile-stream and mutation harnesses,
   baseline contracts, maintenance docs, and the implementation plan.
-- Tests: executable Java 6-compatible progress cases, production call-site
-  mutation rejection, `make check`, source compilation, and hosted CI.
+- Tests: executable Java 6-compatible progress cases, all 13 hostile mutations,
+  `make check`, full source compilation, both hosted checks, and four-language
+  CodeQL analysis on pull request 13.
 - Findings: the legacy output path inherited an unbounded compressor loop and
   had no executable small/uncompressible-output progress contract.
 - Blockers: full native LZO/Ant integration remains dependent on the documented
-  Hadoop 0.20/CDH3-era toolchain.
+  Hadoop 0.20/CDH3-era toolchain; requested Codex review was unavailable after
+  repeated HTTP 401 authentication failures and was skipped per instruction.
 - Next action: refresh small/uncompressible file and index-generation coverage
   without combining it with native or Hadoop API modernization.
 
