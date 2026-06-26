@@ -66,6 +66,8 @@ def main():
             or "catch (RuntimeException e)" not in codec_source \
             or "catch (Error e)" not in codec_source:
         raise AssertionError("borrowed decompressors must be returned on construction failure")
+    if "validateCompressionProgress(bytesReadBefore, bytesWrittenBefore," not in output_source:
+        raise AssertionError("output compression must reject unchanged-state stalls")
     methods = [
         extract_method(source, r"^\s*private static void readFully\("),
         extract_method(source, r"^\s*static long readNextBlockSize\("),
@@ -75,6 +77,7 @@ def main():
         extract_method(source, r"^\s*static void readHeaderBytes\("),
         extract_method(source, r"^\s*static void drainDecompressor\("),
         extract_method(output_source, r"^\s*static IOException closeOutput\("),
+        extract_method(output_source, r"^\s*static void validateCompressionProgress\("),
     ]
 
     with tempfile.TemporaryDirectory(prefix="hadoop-lzop-hostile-") as workdir:
@@ -92,6 +95,7 @@ import java.io.OutputStream;
 import java.util.zip.Adler32;
 import java.util.zip.CRC32;
 import org.apache.hadoop.io.compress.Decompressor;
+import org.apache.hadoop.io.compress.Compressor;
 
 public class LzopHostileStreamHarness {
 """.lstrip()
@@ -110,6 +114,8 @@ public class LzopHostileStreamHarness {
     stopsCloseDrainWhenMoreInputIsRequired();
     rejectsTrueCloseDrainStalls();
     closesAllOutputsAndPreservesFirstFailure();
+    acceptsObservableCompressionProgress();
+    rejectsUnchangedCompressionState();
   }
 
   private static void rejectsPartialBlockTrailer() throws Exception {
@@ -245,6 +251,55 @@ public class LzopHostileStreamHarness {
       closed = true;
       throw new IOException(message);
     }
+  }
+
+  private static void acceptsObservableCompressionProgress() throws Exception {
+    validateCompressionProgress(0, 0, false, 0,
+      new SequenceCompressor(4, 0, false, false));
+    validateCompressionProgress(0, 0, false, 0,
+      new SequenceCompressor(0, 4, false, false));
+    validateCompressionProgress(0, 0, false, 0,
+      new SequenceCompressor(0, 0, true, false));
+    validateCompressionProgress(0, 0, false, 0,
+      new SequenceCompressor(0, 0, false, true));
+    validateCompressionProgress(0, 0, false, 1,
+      new SequenceCompressor(0, 0, false, false));
+  }
+
+  private static void rejectsUnchangedCompressionState() throws Exception {
+    try {
+      validateCompressionProgress(0, 0, false, 0,
+        new SequenceCompressor(0, 0, false, false));
+      throw new AssertionError("unchanged compressor state was accepted");
+    } catch (IOException expected) {
+    }
+  }
+
+  private static final class SequenceCompressor implements Compressor {
+    private final long bytesRead;
+    private final long bytesWritten;
+    private final boolean needsInput;
+    private final boolean finished;
+
+    SequenceCompressor(long bytesRead, long bytesWritten,
+        boolean needsInput, boolean finished) {
+      this.bytesRead = bytesRead;
+      this.bytesWritten = bytesWritten;
+      this.needsInput = needsInput;
+      this.finished = finished;
+    }
+
+    public void setInput(byte[] b, int off, int len) { }
+    public boolean needsInput() { return needsInput; }
+    public void setDictionary(byte[] b, int off, int len) { }
+    public long getBytesRead() { return bytesRead; }
+    public long getBytesWritten() { return bytesWritten; }
+    public void finish() { }
+    public boolean finished() { return finished; }
+    public int compress(byte[] b, int off, int len) { return 0; }
+    public void reset() { }
+    public void end() { }
+    public void reinit(org.apache.hadoop.conf.Configuration conf) { }
   }
 }
 ''',

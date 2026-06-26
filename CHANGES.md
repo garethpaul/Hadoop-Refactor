@@ -1,5 +1,40 @@
 # Changes
 
+## 2026-06-26 13:44 UTC - P2 - preserve output-progress completion evidence
+
+- Summary: reviewed pull request 13 and added a durable baseline assertion so
+  the completed Lzop output-progress plan cannot silently return to an
+  unfinished state.
+- Files: `scripts/check-baseline.py`, the output-progress implementation plan,
+  and this maintenance record.
+- Tests: the new assertion failed against the prior `status: in progress`
+  head, then passed after the completion follow-up; full gates rerun below.
+- Threads: reviewed concurrent pull-request work only; no agents were started.
+- Findings: the implementation and hostile-stream coverage were sound, but
+  the initial baseline did not protect its own plan-completion claim.
+- Blockers: Codex review remains subject to the documented authentication-only
+  skip; exact-head hosted checks are required before merge.
+- Next action: run all local gates, review the exact head, and merge only after
+  every hosted check passes.
+
+## 2026-06-26 13:40 UTC - P1 - output compression progress
+
+- Summary: reject zero-byte Lzop compression calls that leave byte counts,
+  input demand, and completion state unchanged, preventing unbounded write and
+  finish loops while preserving legitimate state-only progress.
+- Files: `LzopOutputStream.java`, hostile-stream and mutation harnesses,
+  baseline contracts, maintenance docs, and the implementation plan.
+- Tests: executable Java 6-compatible progress cases, all 13 hostile mutations,
+  `make check`, full source compilation, both hosted checks, and four-language
+  CodeQL analysis on pull request 13.
+- Findings: the legacy output path inherited an unbounded compressor loop and
+  had no executable small/uncompressible-output progress contract.
+- Blockers: full native LZO/Ant integration remains dependent on the documented
+  Hadoop 0.20/CDH3-era toolchain; requested Codex review was unavailable after
+  repeated HTTP 401 authentication failures and was skipped per instruction.
+- Next action: refresh small/uncompressible file and index-generation coverage
+  without combining it with native or Hadoop API modernization.
+
 ## 2026-06-26 01:48 UTC - P1 - output close cleanup
 
 - Made `LzopOutputStream.close()` idempotent before finalization and preserved

@@ -30,6 +30,8 @@ Priority:
 - Bound and stream file-controlled lzop extra headers during checksum parsing
 - Reject zero-progress positive-length Lzop reads instead of spinning
 - Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
+- Reject unchanged-state Lzop output compression instead of spinning in write
+  or finish loops.
 - Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads.
 - Avoid broad Hadoop upgrades without compatibility planning
 

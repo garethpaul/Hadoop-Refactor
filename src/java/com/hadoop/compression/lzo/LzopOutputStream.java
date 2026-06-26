@@ -209,7 +209,12 @@ public class LzopOutputStream extends CompressorStream {
   }
   @Override
   protected void compress() throws IOException {
+    long bytesReadBefore = compressor.getBytesRead();
+    long bytesWrittenBefore = compressor.getBytesWritten();
+    boolean needsInputBefore = compressor.needsInput();
     int len = compressor.compress(buffer, 0, buffer.length);
+    validateCompressionProgress(bytesReadBefore, bytesWrittenBefore,
+      needsInputBefore, len, compressor);
     if (len > 0) {
       // new lzo block. write current position to index file.
       if (indexOut != null) {
@@ -232,6 +237,18 @@ public class LzopOutputStream extends CompressorStream {
         rawWriteInt(len);
         out.write(buffer, 0, len);
       }
+    }
+  }
+
+  static void validateCompressionProgress(long bytesReadBefore,
+      long bytesWrittenBefore, boolean needsInputBefore, int compressedBytes,
+      Compressor compressor) throws IOException {
+    if (compressedBytes == 0 &&
+        compressor.getBytesRead() == bytesReadBefore &&
+        compressor.getBytesWritten() == bytesWrittenBefore &&
+        compressor.needsInput() == needsInputBefore &&
+        !compressor.finished()) {
+      throw new IOException("Compressor made no progress");
     }
   }
 

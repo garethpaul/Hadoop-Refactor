@@ -27,6 +27,7 @@ ZERO_PROGRESS_READ_PLAN = ROOT / "docs/plans/2026-06-13-lzop-zero-progress-read.
 LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independent-make.md"
 CLOSE_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-15-lzop-close-progress.md"
 READ_DECOMPRESS_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-17-lzop-read-decompress-progress.md"
+OUTPUT_COMPRESSION_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-26-lzop-output-progress.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -1070,6 +1071,7 @@ def main():
         "docs/plans/2026-06-17-lzop-read-decompress-progress.md",
         "docs/plans/2026-06-25-lzop-output-close-cleanup-design.md",
         "docs/plans/2026-06-25-lzop-output-close-cleanup.md",
+        "docs/plans/2026-06-26-lzop-output-progress.md",
     ]
 
     for relative_path in required_files:
@@ -1102,6 +1104,7 @@ def main():
     location_independent_make_plan = LOCATION_INDEPENDENT_MAKE_PLAN.read_text(encoding="utf-8") if LOCATION_INDEPENDENT_MAKE_PLAN.exists() else ""
     close_progress_plan = CLOSE_PROGRESS_PLAN.read_text(encoding="utf-8") if CLOSE_PROGRESS_PLAN.exists() else ""
     read_decompress_progress_plan = READ_DECOMPRESS_PROGRESS_PLAN.read_text(encoding="utf-8") if READ_DECOMPRESS_PROGRESS_PLAN.exists() else ""
+    output_compression_progress_plan = OUTPUT_COMPRESSION_PROGRESS_PLAN.read_text(encoding="utf-8") if OUTPUT_COMPRESSION_PROGRESS_PLAN.exists() else ""
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     empty_index_plan = EMPTY_INDEX_PLAN.read_text(encoding="utf-8") if EMPTY_INDEX_PLAN.exists() else ""
     index_byte_plan = INDEX_BYTE_PLAN.read_text(encoding="utf-8") if INDEX_BYTE_PLAN.exists() else ""
@@ -1261,6 +1264,8 @@ def main():
                 "streamsHeaderBytesWithoutLargeAllocation",
                 "stopsCloseDrainWhenMoreInputIsRequired",
                 "rejectsTrueCloseDrainStalls",
+                "acceptsObservableCompressionProgress",
+                "rejectsUnchangedCompressionState",
             )),
             "Make check must execute the hostile Lzop stream boundary suite",
             failures)
@@ -1300,6 +1305,11 @@ def main():
             "CodecPool.returnCompressor(compressor);" in lzop_output_source and
             "throw closeFailure;" in lzop_output_source,
             "LzopOutputStream close failures must preserve output and compressor cleanup",
+            failures)
+    require("static void validateCompressionProgress(" in lzop_output_source and
+            "Compressor made no progress" in lzop_output_source and
+            "validateCompressionProgress(bytesReadBefore, bytesWrittenBefore," in lzop_output_source,
+            "LzopOutputStream compression must reject unchanged-state stalls",
             failures)
     require(checker_source.count("assertMultiStepDrainCompletes();") == 2 and
             checker_source.count("assertZeroProgressCloseRejected();") == 2 and
@@ -1675,6 +1685,12 @@ def main():
                           read_decompress_progress_verification,
                           re.IGNORECASE) is None,
             "lzop read-decompress progress plan must record completed status and actual verification",
+            failures)
+    output_compression_progress_statuses = re.findall(
+        r"^status: .+$", output_compression_progress_plan, flags=re.MULTILINE
+    )
+    require(output_compression_progress_statuses == ["status: completed"],
+            "lzop output-compression progress plan must be marked completed",
             failures)
     make_gates_plan = MAKE_GATES_PLAN.read_text(encoding="utf-8") if MAKE_GATES_PLAN.exists() else ""
     require("status: completed" in make_gates_plan,

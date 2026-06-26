@@ -12,6 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 MUTATIONS = (
     (
+        "output compression stall guard removal",
+        "src/java/com/hadoop/compression/lzo/LzopOutputStream.java",
+        "    validateCompressionProgress(bytesReadBefore, bytesWrittenBefore,\n"
+        "      needsInputBefore, len, compressor);\n",
+        "",
+    ),
+    (
         "partial block trailer acceptance",
         "src/java/com/hadoop/compression/lzo/LzopInputStream.java",
         "readFully(in, blockSizeBuffer, 0, 4);",
