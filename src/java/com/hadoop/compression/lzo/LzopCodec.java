@@ -67,7 +67,7 @@ public class LzopCodec extends LzoCodec {
   public CompressionOutputStream createOutputStream(OutputStream out) throws IOException {
     //get a compressor which will be returned to the pool when the output stream
     //is closed.
-    return createOutputStream(out, getCompressor());
+    return createPooledOutputStream(out, null);
   }
 
   public CompressionOutputStream createIndexedOutputStream(OutputStream out,
@@ -75,7 +75,24 @@ public class LzopCodec extends LzoCodec {
                                                            throws IOException {
     //get a compressor which will be returned to the pool when the output stream
     //is closed.
-    return createIndexedOutputStream(out, indexOut, getCompressor());
+    return createPooledOutputStream(out, indexOut);
+  }
+
+  private CompressionOutputStream createPooledOutputStream(OutputStream out,
+      DataOutputStream indexOut) throws IOException {
+    Compressor compressor = getCompressor();
+    try {
+      return createIndexedOutputStream(out, indexOut, compressor);
+    } catch (IOException e) {
+      CodecPool.returnCompressor(compressor);
+      throw e;
+    } catch (RuntimeException e) {
+      CodecPool.returnCompressor(compressor);
+      throw e;
+    } catch (Error e) {
+      CodecPool.returnCompressor(compressor);
+      throw e;
+    }
   }
 
   @Override

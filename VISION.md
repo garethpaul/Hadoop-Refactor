@@ -32,6 +32,7 @@ Priority:
 - Close-time Lzop decompression rejects zero progress so malformed streams cannot hang cleanup.
 - Reject unchanged-state Lzop output compression instead of spinning in write
   or finish loops.
+- Return internally borrowed output compressors on every construction failure.
 - Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads.
 - Avoid broad Hadoop upgrades without compatibility planning
 

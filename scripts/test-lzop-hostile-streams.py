@@ -61,11 +61,29 @@ def main():
     if "verifyChecksums();\n      }\n    } catch (IOException e) {\n      closeFailure = e;" not in source \
             or "Incorrect LZO file format" in source:
         raise AssertionError("close-time checksum corruption must be propagated")
-    if "CodecPool.returnDecompressor(decompressor);" not in codec_source \
-            or "catch (IOException e)" not in codec_source \
-            or "catch (RuntimeException e)" not in codec_source \
-            or "catch (Error e)" not in codec_source:
+    pooled_input_factory = extract_method(
+        codec_source,
+        r"^\s*public CompressionInputStream createInputStream\(InputStream in\)",
+    )
+    if pooled_input_factory.count("CodecPool.returnDecompressor(decompressor);") != 3 \
+            or "catch (IOException e)" not in pooled_input_factory \
+            or "catch (RuntimeException e)" not in pooled_input_factory \
+            or "catch (Error e)" not in pooled_input_factory:
         raise AssertionError("borrowed decompressors must be returned on construction failure")
+    pooled_output_factory = extract_method(
+        codec_source,
+        r"^\s*private CompressionOutputStream createPooledOutputStream\(",
+    )
+    if "Compressor compressor = getCompressor();" not in pooled_output_factory \
+            or "return createIndexedOutputStream(out, indexOut, compressor);" not in pooled_output_factory \
+            or pooled_output_factory.count("CodecPool.returnCompressor(compressor);") != 3 \
+            or "catch (IOException e)" not in pooled_output_factory \
+            or "catch (RuntimeException e)" not in pooled_output_factory \
+            or "catch (Error e)" not in pooled_output_factory:
+        raise AssertionError("borrowed compressors must be returned on output construction failure")
+    if codec_source.count("return createPooledOutputStream(out, null);") != 1 \
+            or codec_source.count("return createPooledOutputStream(out, indexOut);") != 1:
+        raise AssertionError("both borrowing output factories must use the pooled ownership helper")
     if "validateCompressionProgress(bytesReadBefore, bytesWrittenBefore," not in output_source:
         raise AssertionError("output compression must reject unchanged-state stalls")
     methods = [
