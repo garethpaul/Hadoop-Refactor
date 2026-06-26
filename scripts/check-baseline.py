@@ -28,6 +28,7 @@ LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independ
 CLOSE_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-15-lzop-close-progress.md"
 READ_DECOMPRESS_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-17-lzop-read-decompress-progress.md"
 OUTPUT_COMPRESSION_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-26-lzop-output-progress.md"
+OUTPUT_CONSTRUCTION_POOL_PLAN = ROOT / "docs/plans/2026-06-26-lzop-output-construction-pool.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
 
@@ -1072,6 +1073,7 @@ def main():
         "docs/plans/2026-06-25-lzop-output-close-cleanup-design.md",
         "docs/plans/2026-06-25-lzop-output-close-cleanup.md",
         "docs/plans/2026-06-26-lzop-output-progress.md",
+        "docs/plans/2026-06-26-lzop-output-construction-pool.md",
     ]
 
     for relative_path in required_files:
@@ -1082,6 +1084,7 @@ def main():
     lzo_index_source = read("src/java/com/hadoop/compression/lzo/LzoIndex.java")
     lzop_input_source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
     lzop_output_source = read("src/java/com/hadoop/compression/lzo/LzopOutputStream.java")
+    lzop_codec_source = read("src/java/com/hadoop/compression/lzo/LzopCodec.java")
     lzop_header_validation_source = read("src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java")
     split_record_reader_source = read("src/java/com/hadoop/mapreduce/LzoSplitRecordReader.java")
     index_record_writer_source = read("src/java/com/hadoop/mapreduce/LzoIndexRecordWriter.java")
@@ -1311,6 +1314,17 @@ def main():
             "validateCompressionProgress(bytesReadBefore, bytesWrittenBefore," in lzop_output_source,
             "LzopOutputStream compression must reject unchanged-state stalls",
             failures)
+    require("private CompressionOutputStream createPooledOutputStream(" in lzop_codec_source and
+            lzop_codec_source.count("return createPooledOutputStream(out, null);") == 1 and
+            lzop_codec_source.count("return createPooledOutputStream(out, indexOut);") == 1 and
+            "Compressor compressor = getCompressor();" in lzop_codec_source and
+            "return createIndexedOutputStream(out, indexOut, compressor);" in lzop_codec_source and
+            lzop_codec_source.count("CodecPool.returnCompressor(compressor);") == 3 and
+            "catch (IOException e)" in lzop_codec_source and
+            "catch (RuntimeException e)" in lzop_codec_source and
+            "catch (Error e)" in lzop_codec_source,
+            "LzopCodec must return internally borrowed compressors on output construction failure",
+            failures)
     require(checker_source.count("assertMultiStepDrainCompletes();") == 2 and
             checker_source.count("assertZeroProgressCloseRejected();") == 2 and
             "verify_lzop_close_progress(failures)" in checker_source and
@@ -1462,6 +1476,15 @@ def main():
             failures)
     require("status: completed" in revision_plan,
             "build revision helper plan must be marked completed",
+            failures)
+    output_construction_pool_plan = OUTPUT_CONSTRUCTION_POOL_PLAN.read_text(
+        encoding="utf-8"
+    ) if OUTPUT_CONSTRUCTION_POOL_PLAN.exists() else ""
+    require("Status: Completed" in output_construction_pool_plan and
+            "checked construction failure" in output_construction_pool_plan and
+            "configuration/native failure" in output_construction_pool_plan and
+            "`Error`" in output_construction_pool_plan,
+            "Lzop output construction pool plan must preserve the ownership decision",
             failures)
     require("status: completed" in empty_index_plan,
             "empty-index boundary plan must be marked completed",

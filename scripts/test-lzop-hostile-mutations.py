@@ -12,6 +12,42 @@ ROOT = Path(__file__).resolve().parents[1]
 
 MUTATIONS = (
     (
+        "plain output factory pool helper bypass",
+        "src/java/com/hadoop/compression/lzo/LzopCodec.java",
+        "    return createPooledOutputStream(out, null);",
+        "    return createOutputStream(out, getCompressor());",
+    ),
+    (
+        "indexed output factory pool helper bypass",
+        "src/java/com/hadoop/compression/lzo/LzopCodec.java",
+        "    return createPooledOutputStream(out, indexOut);",
+        "    return createIndexedOutputStream(out, indexOut, getCompressor());",
+    ),
+    (
+        "output constructor IOException pool leak",
+        "src/java/com/hadoop/compression/lzo/LzopCodec.java",
+        "    } catch (IOException e) {\n"
+        "      CodecPool.returnCompressor(compressor);\n"
+        "      throw e;\n",
+        "    } catch (IOException e) {\n      throw e;\n",
+    ),
+    (
+        "output constructor runtime pool leak",
+        "src/java/com/hadoop/compression/lzo/LzopCodec.java",
+        "    } catch (RuntimeException e) {\n"
+        "      CodecPool.returnCompressor(compressor);\n"
+        "      throw e;\n",
+        "    } catch (RuntimeException e) {\n      throw e;\n",
+    ),
+    (
+        "output constructor Error pool leak",
+        "src/java/com/hadoop/compression/lzo/LzopCodec.java",
+        "    } catch (Error e) {\n"
+        "      CodecPool.returnCompressor(compressor);\n"
+        "      throw e;\n",
+        "    } catch (Error e) {\n      throw e;\n",
+    ),
+    (
         "output compression stall guard removal",
         "src/java/com/hadoop/compression/lzo/LzopOutputStream.java",
         "    validateCompressionProgress(bytesReadBefore, bytesWrittenBefore,\n"

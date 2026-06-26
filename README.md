@@ -92,6 +92,9 @@ Lzop output close independently cleans up its data and index streams and
 returns the pooled compressor while preserving the first IOException.
 Lzop output compression rejects unchanged compressor state instead of allowing
 write or finish loops to spin indefinitely.
+Lzop output factories return internally borrowed compressors when native
+availability checks, configuration parsing, or stream/header construction fail;
+successful construction transfers normal return ownership to stream close.
 Read-time Lzop decompression rejects zero progress without an input request so malformed streams cannot hang normal reads.
 Missing index files fall back to unsplittable reads
 while non-missing index open failures still surface to callers. Temporary index
@@ -155,6 +158,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   baseline.
 - See `docs/plans/2026-06-15-lzop-close-progress.md` for bounded close-time
   decompressor draining.
+- See `docs/plans/2026-06-26-lzop-output-construction-pool.md` for output
+  construction failure and compressor-pool ownership.
 
 ## Contributing
 

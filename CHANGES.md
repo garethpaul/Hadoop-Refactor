@@ -1,5 +1,21 @@
 # Changes
 
+## 2026-06-26 14:25 UTC - P1 - output construction pool ownership
+
+- Summary: return internally borrowed Lzop compressors when native checks,
+  configuration parsing, or output/header construction fail before a stream is
+  created, matching the existing pooled-decompressor failure boundary.
+- Files: `LzopCodec.java`, hostile-stream and mutation contracts, maintenance
+  guidance, and the implementation plan.
+- Tests: the new contract failed before the pooled-output helper existed;
+  `make check`, external-directory verification, Java 6-target compilation,
+  Python/shell syntax, and `git diff --check` pass, and all 18 isolated hostile
+  mutations were rejected.
+- Findings: both no-argument output factories borrowed before all fallible
+  setup but transferred return ownership only on successful stream creation.
+- Blockers: native LZO/legacy Hadoop integration remains hosted/toolchain work.
+- Next action: run exact-head review and hosted checks before merge.
+
 ## 2026-06-26 13:44 UTC - P2 - preserve output-progress completion evidence
 
 - Summary: reviewed pull request 13 and added a durable baseline assertion so
