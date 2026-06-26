@@ -1,5 +1,13 @@
 # Changes
 
+## 2026-06-26 01:48 UTC - P1 - output close cleanup
+
+- Made `LzopOutputStream.close()` idempotent before finalization and preserved
+  the first IOException while independently closing data and index outputs.
+- Guaranteed compressor-pool return after finish, trailer, or close failures.
+- Added an executable Java 6-compatible lifecycle harness proving that both
+  failing outputs close while the first failure remains authoritative.
+
 - Rejected missing or partial block trailers, unknown high header flags, negative or
   oversized decompressor output, and true read/close stalls while preserving
   legitimate input requests.
