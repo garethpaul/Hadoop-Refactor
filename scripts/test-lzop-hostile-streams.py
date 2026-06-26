@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src/java/com/hadoop/compression/lzo/LzopInputStream.java"
+OUTPUT_SOURCE = ROOT / "src/java/com/hadoop/compression/lzo/LzopOutputStream.java"
 CODEC_SOURCE = ROOT / "src/java/com/hadoop/compression/lzo/LzopCodec.java"
 HADOOP_JAR = ROOT / "lib/hadoop-core-0.20.2-cdh3u1.jar"
 
@@ -35,6 +36,7 @@ def extract_method(source, signature):
 
 def main():
     source = SOURCE.read_text(encoding="utf-8")
+    output_source = OUTPUT_SOURCE.read_text(encoding="utf-8")
     codec_source = CODEC_SOURCE.read_text(encoding="utf-8")
     if "if (closed)" not in source or "closed = true;" not in source:
         raise AssertionError("LzopInputStream close must be idempotent")
@@ -72,6 +74,7 @@ def main():
         extract_method(source, r"^\s*static void validateHeaderFlags\("),
         extract_method(source, r"^\s*static void readHeaderBytes\("),
         extract_method(source, r"^\s*static void drainDecompressor\("),
+        extract_method(output_source, r"^\s*static IOException closeOutput\("),
     ]
 
     with tempfile.TemporaryDirectory(prefix="hadoop-lzop-hostile-") as workdir:
@@ -85,6 +88,7 @@ import java.io.ByteArrayInputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.zip.Adler32;
 import java.util.zip.CRC32;
 import org.apache.hadoop.io.compress.Decompressor;
@@ -105,6 +109,7 @@ public class LzopHostileStreamHarness {
     streamsHeaderBytesWithoutLargeAllocation();
     stopsCloseDrainWhenMoreInputIsRequired();
     rejectsTrueCloseDrainStalls();
+    closesAllOutputsAndPreservesFirstFailure();
   }
 
   private static void rejectsPartialBlockTrailer() throws Exception {
@@ -216,6 +221,30 @@ public class LzopHostileStreamHarness {
     }
     public void reset() { offset = 0; }
     public void end() { }
+  }
+
+  private static void closesAllOutputsAndPreservesFirstFailure() throws Exception {
+    TrackingOutput first = new TrackingOutput("first");
+    TrackingOutput second = new TrackingOutput("second");
+    IOException failure = closeOutput(first, null);
+    failure = closeOutput(second, failure);
+    if (!first.closed || !second.closed) {
+      throw new AssertionError("all outputs were not closed");
+    }
+    if (failure == null || !"first".equals(failure.getMessage())) {
+      throw new AssertionError("first close failure was not preserved");
+    }
+  }
+
+  private static final class TrackingOutput extends OutputStream {
+    private final String message;
+    private boolean closed;
+    TrackingOutput(String message) { this.message = message; }
+    public void write(int value) { }
+    public void close() throws IOException {
+      closed = true;
+      throw new IOException(message);
+    }
   }
 }
 ''',

@@ -103,18 +103,42 @@ public class LzopOutputStream extends CompressorStream {
    */
   @Override
   public void close() throws IOException {
-    if (!closed) {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    IOException closeFailure = null;
+    try {
       finish();
       out.write(new byte[]{ 0, 0, 0, 0 });
-      out.close();
-      if (indexOut != null) {
-        indexOut.close();
+    } catch (IOException e) {
+      closeFailure = e;
+    }
+    closeFailure = closeOutput(out, closeFailure);
+    if (indexOut != null) {
+      closeFailure = closeOutput(indexOut, closeFailure);
+    }
+    try {
+      if (closeFailure != null) {
+        throw closeFailure;
       }
-      closed = true;
+    } finally {
       //return the compressor to the pool for later reuse;
       //the returnCompressor handles nulls.
       CodecPool.returnCompressor(compressor);
     }
+  }
+
+  static IOException closeOutput(OutputStream output,
+      IOException closeFailure) {
+    try {
+      output.close();
+    } catch (IOException e) {
+      if (closeFailure == null) {
+        closeFailure = e;
+      }
+    }
+    return closeFailure;
   }
 
   @Override

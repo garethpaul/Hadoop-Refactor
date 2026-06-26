@@ -1068,6 +1068,8 @@ def main():
         "docs/plans/2026-06-13-location-independent-make.md",
         "docs/plans/2026-06-15-lzop-close-progress.md",
         "docs/plans/2026-06-17-lzop-read-decompress-progress.md",
+        "docs/plans/2026-06-25-lzop-output-close-cleanup-design.md",
+        "docs/plans/2026-06-25-lzop-output-close-cleanup.md",
     ]
 
     for relative_path in required_files:
@@ -1077,6 +1079,7 @@ def main():
     ivysettings = read("ivy/ivysettings.xml")
     lzo_index_source = read("src/java/com/hadoop/compression/lzo/LzoIndex.java")
     lzop_input_source = read("src/java/com/hadoop/compression/lzo/LzopInputStream.java")
+    lzop_output_source = read("src/java/com/hadoop/compression/lzo/LzopOutputStream.java")
     lzop_header_validation_source = read("src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java")
     split_record_reader_source = read("src/java/com/hadoop/mapreduce/LzoSplitRecordReader.java")
     index_record_writer_source = read("src/java/com/hadoop/mapreduce/LzoIndexRecordWriter.java")
@@ -1289,6 +1292,14 @@ def main():
             "CodecPool.returnDecompressor(decompressor);" in lzop_input_source and
             "throw closeFailure;" in lzop_input_source,
             "LzopInputStream close failures must preserve stream and decompressor cleanup",
+            failures)
+    require("if (closed) {\n      return;\n    }\n    closed = true;" in lzop_output_source and
+            "static IOException closeOutput(OutputStream output," in lzop_output_source and
+            "closeFailure = closeOutput(out, closeFailure);" in lzop_output_source and
+            "closeFailure = closeOutput(indexOut, closeFailure);" in lzop_output_source and
+            "CodecPool.returnCompressor(compressor);" in lzop_output_source and
+            "throw closeFailure;" in lzop_output_source,
+            "LzopOutputStream close failures must preserve output and compressor cleanup",
             failures)
     require(checker_source.count("assertMultiStepDrainCompletes();") == 2 and
             checker_source.count("assertZeroProgressCloseRejected();") == 2 and
