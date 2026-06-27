@@ -138,7 +138,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   changes to build metadata, native scripts, Java source, tests, or dependency
   download configuration.
 - Every Make verification target derives the checkout root from the loaded
-  Makefile, so an absolute Makefile path works from any working directory.
+  Makefile, so an absolute Makefile path works from any working directory,
+  including checkout paths containing spaces.
 - See `docs/plans/2026-06-08-native-packaging-guard.md` for the current native packaging guardrail.
 - See `docs/plans/2026-06-08-build-revision-helper-guard.md` for the current build revision helper guardrail.
 - See `docs/plans/2026-06-09-lzo-index-open-failure-guard.md` for the LZO index open failures guardrail.

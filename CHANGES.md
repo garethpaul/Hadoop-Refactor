@@ -1,5 +1,11 @@
 # Changes
 
+## 2026-06-27 - verification path reliability
+
+- Preserved absolute Makefile roots containing spaces and added a
+  recursive-safe regression that runs the full baseline from an external
+  caller against a copied spaced-path checkout.
+
 ## 2026-06-26 14:25 UTC - P1 - output construction pool ownership
 
 - Summary: return internally borrowed Lzop compressors when native checks,

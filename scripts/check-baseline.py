@@ -1050,6 +1050,7 @@ def main():
         "src/java/com/hadoop/compression/lzo/LzopHeaderValidation.java",
         "scripts/test-lzop-hostile-streams.py",
         "scripts/test-lzop-hostile-mutations.py",
+        "scripts/test-make-spaced-path.py",
         "src/test/com/hadoop/compression/lzo/TestLzoCodec.java",
         "docs/plans/2026-06-08-legacy-build-baseline.md",
         "docs/plans/2026-06-08-native-packaging-guard.md",
@@ -1151,8 +1152,11 @@ def main():
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, build, and check gate targets",
             failures)
-    require("override ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))" in makefile and
-            '@python3 "$(ROOT)/scripts/check-baseline.py"' in makefile,
+    require("override makefile_space := __HADOOP_REFACTOR_MAKEFILE_SPACE__" in makefile and
+            "override encoded_makefile_list := $(patsubst $(makefile_space)%,%,$(subst $(space),$(makefile_space),$(MAKEFILE_LIST)))" in makefile and
+            "override ROOT := $(subst $(makefile_space),$(space),$(abspath $(dir $(lastword $(encoded_makefile_list)))))" in makefile and
+            '@python3 "$(ROOT)/scripts/check-baseline.py"' in makefile and
+            '@python3 "$(ROOT)/scripts/test-make-spaced-path.py"' in makefile,
             "Makefile must invoke the baseline checker through the loaded repository root",
             failures)
     workflow_lines = ci_workflow.splitlines()
@@ -1419,7 +1423,8 @@ def main():
     require("distributed input traversal failures" in readme,
             "README must document distributed input traversal failure propagation",
             failures)
-    require("absolute Makefile path" in readme and "any working directory" in readme,
+    require("absolute Makefile path" in readme and "any working directory" in readme and
+            "paths containing spaces" in readme,
             "README must document location-independent Make verification",
             failures)
     require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "HTTPS" in vision and "native packaging" in vision and "build revision" in vision and "malformed index byte counts" in vision and "malformed index positions" in vision and "oversized LZO block sizes" in vision and "index open failures" in vision and "index rename failures" in vision,
