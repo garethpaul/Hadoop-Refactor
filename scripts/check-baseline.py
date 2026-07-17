@@ -31,6 +31,83 @@ OUTPUT_COMPRESSION_PROGRESS_PLAN = ROOT / "docs/plans/2026-06-26-lzop-output-pro
 OUTPUT_CONSTRUCTION_POOL_PLAN = ROOT / "docs/plans/2026-06-26-lzop-output-construction-pool.md"
 CI_WORKFLOW = ROOT / ".github/workflows/check.yml"
 
+# Single source of truth for the LZO block-size bound. The smoke-check stubs below
+# and verify_lzo_codec_max_block_size() both derive from this value, so a stub can
+# never silently disagree with the bound that production source actually compiles to.
+MAX_BLOCK_SIZE_BYTES = 64 * 1024 * 1024
+
+LZO_CODEC_STUB_SOURCE = """
+package com.hadoop.compression.lzo;
+
+public class LzoCodec {
+  public static final int MAX_BLOCK_SIZE = %d;
+}
+""".lstrip() % MAX_BLOCK_SIZE_BYTES
+
+# Minimal commons-logging stubs: commons-logging is not vendored in lib/, so the real
+# LzoCodec.java cannot be compiled without them.
+COMMONS_LOGGING_LOG_STUB = """
+package org.apache.commons.logging;
+
+public interface Log {
+  void debug(Object message);
+  void debug(Object message, Throwable throwable);
+  void info(Object message);
+  void info(Object message, Throwable throwable);
+  void warn(Object message);
+  void warn(Object message, Throwable throwable);
+  void error(Object message);
+  void error(Object message, Throwable throwable);
+  void fatal(Object message);
+  void fatal(Object message, Throwable throwable);
+  void trace(Object message);
+  void trace(Object message, Throwable throwable);
+  boolean isDebugEnabled();
+  boolean isInfoEnabled();
+  boolean isWarnEnabled();
+  boolean isErrorEnabled();
+  boolean isFatalEnabled();
+  boolean isTraceEnabled();
+}
+""".lstrip()
+
+COMMONS_LOGGING_LOG_FACTORY_STUB = """
+package org.apache.commons.logging;
+
+public class LogFactory {
+  private static final Log LOG = new NoopLog();
+
+  public static Log getLog(Class<?> clazz) {
+    return LOG;
+  }
+
+  public static Log getLog(String name) {
+    return LOG;
+  }
+
+  private static class NoopLog implements Log {
+    public void debug(Object message) { }
+    public void debug(Object message, Throwable throwable) { }
+    public void info(Object message) { }
+    public void info(Object message, Throwable throwable) { }
+    public void warn(Object message) { }
+    public void warn(Object message, Throwable throwable) { }
+    public void error(Object message) { }
+    public void error(Object message, Throwable throwable) { }
+    public void fatal(Object message) { }
+    public void fatal(Object message, Throwable throwable) { }
+    public void trace(Object message) { }
+    public void trace(Object message, Throwable throwable) { }
+    public boolean isDebugEnabled() { return false; }
+    public boolean isInfoEnabled() { return false; }
+    public boolean isWarnEnabled() { return false; }
+    public boolean isErrorEnabled() { return false; }
+    public boolean isFatalEnabled() { return false; }
+    public boolean isTraceEnabled() { return false; }
+  }
+}
+""".lstrip()
+
 
 def require(condition, message, failures):
     if not condition:
@@ -174,16 +251,7 @@ def verify_lzo_index_empty_alignment(failures):
         decompressor_stub = stub_dir / "LzopDecompressor.java"
         log_stub = logging_stub_dir / "Log.java"
         log_factory_stub = logging_stub_dir / "LogFactory.java"
-        codec_stub.write_text(
-            """
-package com.hadoop.compression.lzo;
-
-public class LzoCodec {
-  public static final int MAX_BLOCK_SIZE = 64 * 1024 * 1024;
-}
-""".lstrip(),
-            encoding="utf-8",
-        )
+        codec_stub.write_text(LZO_CODEC_STUB_SOURCE, encoding="utf-8")
         decompressor_stub.write_text(
             """
 package com.hadoop.compression.lzo;
@@ -547,16 +615,7 @@ def verify_lzop_extra_header_length(failures):
         package_dir.mkdir(parents=True)
         codec_stub = package_dir / "LzoCodec.java"
         harness = package_dir / "LzopHeaderValidationHarness.java"
-        codec_stub.write_text(
-            """
-package com.hadoop.compression.lzo;
-
-public class LzoCodec {
-  public static final int MAX_BLOCK_SIZE = 64 * 1024 * 1024;
-}
-""".lstrip(),
-            encoding="utf-8",
-        )
+        codec_stub.write_text(LZO_CODEC_STUB_SOURCE, encoding="utf-8")
         harness.write_text(
             """
 package com.hadoop.compression.lzo;
@@ -1026,6 +1085,117 @@ public class LzopReadDecompressProgressHarness {
         )
 
 
+def verify_lzo_codec_max_block_size(failures):
+    """Assert the EFFECTIVE compiled value of the real LzoCodec.MAX_BLOCK_SIZE.
+
+    Every block-size guard in LzoIndex, LzopInputStream, LzoSplitRecordReader and
+    LzopHeaderValidation is written as `x > LzoCodec.MAX_BLOCK_SIZE`. The smoke checks
+    above compile those real sources against a *stub* LzoCodec, so nothing else in this
+    gate ever observes the bound that production actually compiles to. Because a Java
+    `static final int` is inlined into its consumers at compile time, a widened or
+    vacuous bound in the real source changes every guard's behaviour while leaving the
+    guard text -- and therefore every text pin in this file -- byte-identical.
+
+    This reads the value javac actually folded, so it is immune to respelling
+    (64*1024*1024 vs 67108864) and catches widening, vacuous (Integer.MAX_VALUE) and
+    overflowed (64*1024*1024*100 -> negative) bounds alike.
+    """
+    if shutil.which("javac") is None or shutil.which("javap") is None:
+        failures.append("javac and javap must be available for the LzoCodec bound check")
+        return
+
+    lzo_codec = ROOT / "src/java/com/hadoop/compression/lzo/LzoCodec.java"
+    if not lzo_codec.is_file():
+        failures.append("Required file missing: src/java/com/hadoop/compression/lzo/LzoCodec.java")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="hadoop-refactor-lzo-codec-") as workdir:
+        workdir = Path(workdir)
+        class_dir = workdir / "classes"
+        class_dir.mkdir()
+        logging_dir = workdir / "org/apache/commons/logging"
+        logging_dir.mkdir(parents=True)
+        log_stub = logging_dir / "Log.java"
+        log_factory_stub = logging_dir / "LogFactory.java"
+        log_stub.write_text(COMMONS_LOGGING_LOG_STUB, encoding="utf-8")
+        log_factory_stub.write_text(COMMONS_LOGGING_LOG_FACTORY_STUB, encoding="utf-8")
+
+        hadoop_jar = ROOT / "lib/hadoop-core-0.20.2-cdh3u1.jar"
+        try:
+            compile_result = subprocess.run(
+                [
+                    "javac",
+                    "-nowarn",
+                    "-cp",
+                    str(hadoop_jar),
+                    "-sourcepath",
+                    f"{ROOT / 'src/java'}:{workdir}",
+                    "-d",
+                    str(class_dir),
+                    str(log_stub),
+                    str(log_factory_stub),
+                    str(lzo_codec),
+                ],
+                cwd=str(ROOT),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            failures.append("Real LzoCodec.java compilation must not hang")
+            return
+        # Reported distinctly from a value rejection: a mutation that breaks javac must
+        # never be mistaken for a caught bound regression.
+        require(
+            compile_result.returncode == 0,
+            "Real LzoCodec.java must compile for the MAX_BLOCK_SIZE bound check: " +
+            compile_result.stderr.strip(),
+            failures,
+        )
+        if compile_result.returncode != 0:
+            return
+
+        try:
+            javap_result = subprocess.run(
+                ["javap", "-constants", "-cp", str(class_dir), "com.hadoop.compression.lzo.LzoCodec"],
+                cwd=str(ROOT),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            failures.append("javap inspection of LzoCodec must not hang")
+            return
+        require(
+            javap_result.returncode == 0,
+            "javap must inspect the compiled LzoCodec: " + javap_result.stderr.strip(),
+            failures,
+        )
+        if javap_result.returncode != 0:
+            return
+
+        match = re.search(r"int\s+MAX_BLOCK_SIZE\s*=\s*(-?\d+)\s*;", javap_result.stdout)
+        require(
+            match is not None,
+            "LzoCodec.MAX_BLOCK_SIZE must be a compile-time int constant readable by javap",
+            failures,
+        )
+        if match is None:
+            return
+
+        effective = int(match.group(1))
+        require(
+            effective == MAX_BLOCK_SIZE_BYTES,
+            f"LzoCodec.MAX_BLOCK_SIZE must compile to {MAX_BLOCK_SIZE_BYTES} bytes (64 MiB), "
+            f"got {effective}. Every block-size guard is relative to this bound; widening it "
+            f"silently weakens LzoIndex, LzopInputStream, LzoSplitRecordReader and "
+            f"LzopHeaderValidation without changing any guard text.",
+            failures,
+        )
+
+
 def main():
     failures = []
     required_files = [
@@ -1346,6 +1516,13 @@ def main():
             bounded_timeout_count == 3,
             "Lzop read-decompress progress coverage must execute both scenarios with a bounded timeout",
             failures)
+    # Adjacency form, matching the convention above: the literal below is written with an
+    # escaped "\n", so this require() line cannot satisfy itself -- only the real,
+    # newline-separated call in main() can.
+    require("verify_lzop_read_decompress_progress(failures)\n    verify_lzo_codec_max_block_size(failures)" in checker_source,
+            "main() must invoke verify_lzo_codec_max_block_size so the effective compiled "
+            "LzoCodec.MAX_BLOCK_SIZE is read on every run",
+            failures)
     require("uncompressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source and "compressedBlockSize > LzoCodec.MAX_BLOCK_SIZE" in split_record_reader_source,
             "LzoSplitRecordReader must reject oversized LZO block sizes before seeking",
             failures)
@@ -1389,6 +1566,7 @@ def main():
     verify_lzop_read_progress(failures)
     verify_lzop_close_progress(failures)
     verify_lzop_read_decompress_progress(failures)
+    verify_lzo_codec_max_block_size(failures)
 
     require("build/" in gitignore and "target/" in gitignore and "*.class" in gitignore and "*.so" in gitignore and ".DS_Store" in gitignore,
             ".gitignore must exclude generated build products and local machine files",
